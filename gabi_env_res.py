@@ -122,12 +122,12 @@ def create_diverstiy_figs():
 
     # so we want to plot the ITS2 sequence diversity in each of the samples as bar charts
     # We are going to have a huge diversity of sequences to deal with so I think something along the lines
-    # of plotting the top 10 most abundant sequences. The term 'most abundant' should be considered carefully here
-    # I think it will be best if we work on a sample by sample basis. i.e. we pick the 10 sequences that have the
+    # of plotting the top n most abundant sequences. The term 'most abundant' should be considered carefully here
+    # I think it will be best if we work on a sample by sample basis. i.e. we pick the n sequences that have the
     # highest representation in any one sample. So for example what we are not doing is seeing how many times
-    # C3 was sequenced across all of the samples, and finding that it is a lot and therefore sequencing.
+    # C3 was sequenced across all of the samples, and finding that it is a lot and therefore plotting it.
     # we are looking in each of the samples and seeing the highest proportion it is found at in any one sample.
-    # This way we sould have the best chance of having a coloured representation for each sample's most abundant
+    # This way we should have the best chance of having a coloured representation for each sample's most abundant
     # sequence.
 
     # to start lets go sample by sample and see what the highest prop for each seq is.
@@ -156,43 +156,60 @@ def create_diverstiy_figs():
                         seq_rel_abund_calculator_dict[seq_name] = (sample_index, val)
         pickle.dump(seq_rel_abund_calculator_dict, open('seq_rel_abund_calculator_dict.pickle', 'wb'))
 
-    # set up the plotting environment
-    # one plot for coral, mucus, seawater, sediment, turf_algae
-    # f, axarr = plt.subplots(6, 1, sharey='row', sharex='col')
-    f, axarr = plt.subplots(6, 1)
 
-    axarr_index = 0
+
     # here we have a dict that contains the largest rel_abundances per sample for each of the seqs
-    # now we can sort this to look at the top ? 10 sequences to start with (I'm not sure how the colouring will
-    # look like so lets just start with 10 and see where we get to)
-
+    # now we can sort this to look at the top ? n sequences to start with (I'm not sure how the colouring will
+    # look like so lets just start with 30 and see where we get to)
     sorted_list = sorted(seq_rel_abund_calculator_dict.items(), key = lambda x: x[1][1], reverse=True)
+    most_abund_seq_names = [tup[0] for tup in sorted_list]
 
     # from the above sorted list we can then plot these sequences with colour and all others with grey scale
-
-    # now we need to get the actual plotting information for each of the samples.
-    # we can do this sample type by sample type
     # lets make a coulour dictionary for the most common types
-    most_abund_seq_names = [tup[0] for tup in sorted_list]
-    # we will also need a grey palette for those sequences that are not the ones being annotated
     colour_list = get_colour_list()
-    grey_palette = ['#D0CFD4', '#89888D', '#4A4A4C', '#8A8C82', '#D4D5D0', '#53544F']
     colour_dict = {}
     num_coloured_seqs = 30
-    top_n_seqs_to_get = most_abund_seq_names[:num_coloured_seqs]
-    top_n_seqs_done = []
-    # we need a list that will hold the rectangle objects for making the legend
-    legend_rectangle_holder = [[] for i in range(num_coloured_seqs)]
+
+    # we will also need a grey palette for those sequences that are not the ones being annotated
+    grey_palette = ['#D0CFD4', '#89888D', '#4A4A4C', '#8A8C82', '#D4D5D0', '#53544F']
+
+    # make the dict
     for i in range(len(most_abund_seq_names)):
         if i < num_coloured_seqs:
             colour_dict[most_abund_seq_names[i]] = colour_list[i]
         else:
-            colour_dict[most_abund_seq_names[i]] = grey_palette[i%6]
-
-    # add the 'low' key and assign it to white for later on
+            colour_dict[most_abund_seq_names[i]] = grey_palette[i % 6]
+    # add the 'low' key and assign it to grey for later on
+    # the low category will be created later on to hold the grouped abundances of sequences in samples
+    # below a certain rel abund cutoff
     colour_dict['low'] = '#D0CFD4'
 
+    # for plotting we will also need to collect the 'rectangle' objects from the plotting process to use to make
+    # the lengend which we will display on the plot right at the end
+    # this is going to be a little tricky to collect as not ever sample type group that we are plotting
+    # is going to have all of the top n sequences. So, we will have to pick up rectangles when they come up in
+    # the plotting.
+    # to keep track of which sequences we need we have:
+    top_n_seqs_to_get = most_abund_seq_names[:num_coloured_seqs]
+    # to keep track of which sequences we have already collected we have:
+    top_n_seqs_done = []
+    #finally to collect the rectangles and store them in order despite collecting them out of order we have:
+    legend_rectangle_holder = [[] for i in range(num_coloured_seqs)]
 
+
+    # set up the plotting environment
+    # one plot for coral, mucus, seawater, sediment, turf_algae
+    f, axarr = plt.subplots(6, 1)
+    # counter to reference which set of axes we are plotting on
+    axarr_index = 0
+
+    # now we need to get the actual plotting information for each of the samples.
+    # we can do this sample type by sample type
+    # we will create a local dataframe that will be a sub set of the main sp output dataframe but will
+    # only contain the samples of the given sample type. It will also eventually only contain the sequence
+    # information for the sample type in question. Normally I would make a 2D list to hold the plotting
+    # information but in this case having all of the informatin in a dataframe is working really well and
+    # this is how I will do it in future.
 
     # go environment type by environment type
     for env_type in ['coral', 'mucus', 'sea_water', 'sed_close', 'sed_far', 'turf']:
@@ -206,14 +223,13 @@ def create_diverstiy_figs():
         # get subset of the main dfs that contain only the coral samples
         env_info_df = info_df[info_df['environ type'] == env_type]
         env_sp_output_df = sp_output_df.loc[env_info_df.index.values.tolist()]
-        env_QC_info_df = QC_info_df.loc[env_info_df.index.values.tolist()]
 
-        # append a <1% columns to the env_sp_ouput_df and populate with 0s
+        # append a 'low' columns to the env_sp_ouput_df and populate with 0s
         env_sp_output_df['low'] = 0
-        # now make a prop version of the df
+        # now make a proportions version of the df, rather than absolute counts
         env_sp_output_df_prop = env_sp_output_df[:].div(env_sp_output_df[:].sum(axis=1), axis=0)
 
-        # now as we work our way through we can sum up the <1% sequences into this column
+        # now as we work our way through we can sum up the low sequences into this column
         # we can then check for 0 columns and drop these.
 
         # get a list of the sequences found in the collection of samples of the given type and order
