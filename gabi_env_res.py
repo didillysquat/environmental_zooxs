@@ -380,7 +380,81 @@ def create_diverstiy_figs():
     apples = 'asdf'
 
 
+def create_quan_diversity_figs():
+    ''' The purpose of these figs will be to compare the diversity found in the different sample types
+    I envisage them being a sub plot each step of the QC:
+     1 - Post QC
+     2 - Symbiodinium
+     3 - non-Symbiodinium
+     4 - post - MED
+     5 - pst MED to pre MED symbiodinium ratio
+     number 5 will be important to consider and will hopefully hopefully be similar between all of the sample
+     types. It is important because MED has the possibility to collapse diverstiy in a non-linear manner.
+     e.g. in a sample with 1000 sequences, that has roughly the same spread as a sample with only 100 sequences
+     it is possible that MED will collapse both of these samples into 10 meaningful sequences. However, we would
+     then need to make sure to compare the different samples according to their pre-MED diversity. Although, we can
+     also discuss when the post-MED diversity means.
+     For each of teh sup plots I envisage there being a a 'set of plots' for each of the sample types
+     For each of these sets would in trun contain a set of two plots. One for absolute and one for unique. Each one
+     of these plots would be the actual datapoints on the left, and then a mean point with SD bars to the right of it
+     . We can put the absoulte and unique values on different axes as the differences between these will be huge.
+     We can achieve this by setting up subplot axes and then using the .errorbar and .scatter functions.
+     In terms of collecting the data we should simply use the cleaned up dataframes that we created when making the
+     diversity plots.'''
 
+    sp_output_df = pickle.load(open('sp_output_df.pickle', 'rb'))
+    QC_info_df = pickle.load(open('QC_info_df.pickle', 'rb'))
+    info_df = pickle.load(open('info_df.pickle', 'rb'))
+
+    # lets make 5 subplot
+    # according to the above categories
+
+    f, axarr = plt.subplots(5, 1)
+    # counter to reference which set of axes we are plotting on
+    axarr_index = 0
+    # we will create some x axis indicies to arranage where we will be ploting
+    # we can be smart with these later on and create some nice spacing layouts but for the time
+    # being lets just get things plotted. I calculate we will ahve four columns to plot for each of the
+    # sample types so that means that we 're looking at 6 x 4 columns roughly
+    ind = range(24)
+    ind_index = 0
+
+    # cycle through these strings to help us with our conditionals
+    # one of these for each of the subplots that we will create
+    # we will make these useful tuples that will hold the actual name of the columns that the data we want will
+    # be in so that we can pull these out of the dataframe easily
+    for sub_plot_type in [('post_qc_absolute_seqs', 'post_qc_unique_seqs'),
+                          ('post_taxa_id_absolute_symbiodinium_seqs', 'post_taxa_id_unique_symbiodinium_seqs'),
+                          ('post_taxa_id_absolute_non_symbiodinium_seqs','post_taxa_id_unique_non_symbiodinium_seqs'),
+                          ('post_med_absolute','post_med_unique'),
+                          ('med_ratio', True) ]:
+
+        # for each of the sub plots we will want to grab the absolute and unique counts and plot these
+        # for each of the sample types.
+        # go environment type by environment type
+        for env_type in ['coral', 'mucus', 'sea_water', 'sed_close', 'sed_far', 'turf']:
+
+            if sub_plot_type[0] != 'med_ratio':
+                # get a sub df of the main df according to the env_type
+                # get subset of the main dfs that contain only the coral samples
+                env_info_df = info_df[info_df['environ type'] == env_type]
+                env_QC_info_df = QC_info_df.loc[env_info_df.index.values.tolist()]
+                sys.stdout.write('\nGenerating plotting info for {} samples in subplot type {}\n'
+                                 .format(env_type, sub_plot_type))
+                # the data we are going to be plotting is so simple that rather than collecting it and then
+                # plotting it we may as well just go straight to plotting it from the df
+
+                # first plot the actual datapoints
+                # x will be the indices, y will be the actual value
+                y_values = env_QC_info_df.loc[:, sub_plot_type[0]]
+                x_values = [ind[ind_index] for y in y_values]
+                axarr[axarr_index].scatter(x_values, y_values, marker='.', s=1)
+                ind_index += 1
+
+
+
+
+    return
 
 def get_colour_list():
     colour_list = ["#FFFF00", "#1CE6FF", "#FF34FF", "#FF4A46", "#008941", "#006FA6", "#A30059", "#FFDBE5",
@@ -471,4 +545,4 @@ def get_coral_to_mucus_dict():
 
     return coral_info_name_to_muc_info_name_dict
 
-create_diverstiy_figs()
+create_quan_diversity_figs()
