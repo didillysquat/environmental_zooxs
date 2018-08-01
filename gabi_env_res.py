@@ -5,6 +5,7 @@ import os
 import matplotlib.pyplot as plt
 from collections import defaultdict
 import sys
+import statistics
 
 
 def create_diverstiy_figs():
@@ -373,12 +374,6 @@ def create_diverstiy_figs():
     f.show()
 
 
-    apples = 'asdf'
-
-
-
-    apples = 'asdf'
-
 
 def create_quan_diversity_figs():
     ''' The purpose of these figs will be to compare the diversity found in the different sample types
@@ -412,29 +407,47 @@ def create_quan_diversity_figs():
     f, axarr = plt.subplots(5, 1)
     # counter to reference which set of axes we are plotting on
     axarr_index = 0
-    # we will create some x axis indicies to arranage where we will be ploting
-    # we can be smart with these later on and create some nice spacing layouts but for the time
-    # being lets just get things plotted. I calculate we will ahve four columns to plot for each of the
-    # sample types so that means that we 're looking at 6 x 4 columns roughly
-    ind = range(24)
-    ind_index = 0
+    # y_axis_labels = ['raw_contigs', 'post_qc', 'Symbiodinium', 'non-Symbiodinium', 'post-MED', 'post-MED / pre-MED']
+    y_axis_labels = ['raw_contigs',  'non-Symbiodinium','Symbiodinium',  'post-MED', 'post-MED / pre-MED']
+
 
     # cycle through these strings to help us with our conditionals
     # one of these for each of the subplots that we will create
     # we will make these useful tuples that will hold the actual name of the columns that the data we want will
     # be in so that we can pull these out of the dataframe easily
-    for sub_plot_type in [('post_qc_absolute_seqs', 'post_qc_unique_seqs'),
+    # for sub_plot_type in [('raw_contigs',), ('post_qc_absolute_seqs', 'post_qc_unique_seqs'),
+    #                       ('post_taxa_id_absolute_symbiodinium_seqs', 'post_taxa_id_unique_symbiodinium_seqs'),
+    #                       ('post_taxa_id_absolute_non_symbiodinium_seqs','post_taxa_id_unique_non_symbiodinium_seqs'),
+    #                       ('post_med_absolute','post_med_unique'),
+    #                       ('med_ratio', True) ]:
+    for sub_plot_type in [('raw_contigs',),
+                          ('post_taxa_id_absolute_non_symbiodinium_seqs', 'post_taxa_id_unique_non_symbiodinium_seqs'),
                           ('post_taxa_id_absolute_symbiodinium_seqs', 'post_taxa_id_unique_symbiodinium_seqs'),
-                          ('post_taxa_id_absolute_non_symbiodinium_seqs','post_taxa_id_unique_non_symbiodinium_seqs'),
-                          ('post_med_absolute','post_med_unique'),
-                          ('med_ratio', True) ]:
+                          ('post_med_absolute', 'post_med_unique'),
+                          ('med_ratio', True)]:
+
 
         # for each of the sub plots we will want to grab the absolute and unique counts and plot these
         # for each of the sample types.
         # go environment type by environment type
-        for env_type in ['coral', 'mucus', 'sea_water', 'sed_close', 'sed_far', 'turf']:
 
-            if sub_plot_type[0] != 'med_ratio':
+        # we will create some x axis indicies to arranage where we will be ploting
+        # we can be smart with these later on and create some nice spacing layouts but for the time
+        # being lets just get things plotted. Let's have one idices for each sample type and work
+        # relatively from there.
+        ind = range(6)
+        ind_index = 0
+
+
+        if sub_plot_type[0] != 'raw_contigs': ax2 = axarr[axarr_index].twinx()
+
+        axarr[axarr_index].set_xlabel(y_axis_labels[axarr_index])
+        env_types_list = ['coral', 'mucus', 'sea_water', 'sed_close', 'sed_far', 'turf']
+        for env_type in env_types_list:
+
+
+            if sub_plot_type[0] == 'raw_contigs':
+                # here we will plot just the raw_contigs
                 # get a sub df of the main df according to the env_type
                 # get subset of the main dfs that contain only the coral samples
                 env_info_df = info_df[info_df['environ type'] == env_type]
@@ -444,17 +457,238 @@ def create_quan_diversity_figs():
                 # the data we are going to be plotting is so simple that rather than collecting it and then
                 # plotting it we may as well just go straight to plotting it from the df
 
+                # PLOT ABSOLUTE
                 # first plot the actual datapoints
                 # x will be the indices, y will be the actual value
-                y_values = env_QC_info_df.loc[:, sub_plot_type[0]]
+                y_values = list(env_QC_info_df.loc[:, sub_plot_type[0]])
                 x_values = [ind[ind_index] for y in y_values]
-                axarr[axarr_index].scatter(x_values, y_values, marker='.', s=1)
+                axarr[axarr_index].scatter(x_values, y_values, marker='.', s=1, c='b')
+
+                # now plot the mean and error bars
+                # I know there is a mean and SD function on a pandas series but it is throwing out all sorts of
+                # erros so lest stick with what we know
+                std = statistics.stdev(y_values)
+                mean = statistics.mean(y_values)
+                axarr[axarr_index].scatter(x=ind[ind_index] + 0.125, y=mean, marker='s', s=8, c='b')
+                axarr[axarr_index].errorbar(x=ind[ind_index] + 0.125, y=mean, yerr=std, fmt='none', c='b')
+
+                if env_type == 'turf':
+                    axarr[axarr_index].set_ylabel('', color='b')
+                    axarr[axarr_index].tick_params('y', colors='b')
+                    axarr[axarr_index].spines['right'].set_visible(False)
+                    # axarr[axarr_index].spines['bottom'].set_visible(False)
+                    axarr[axarr_index].spines['top'].set_visible(False)
+
+                    # set the ticks
+                    # axarr[axarr_index].set_xticks([a + 0.1875 for a in range(6)], minor=False)
+                    # axarr[axarr_index].set_xticklabels(env_types_list)
+                    axarr[axarr_index].tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
+                    # set the xaxis title
+                    axarr[axarr_index].set_xlabel('raw_contigs')
+
+                    axarr[axarr_index].set_ylim((0, 1200000))
+
+                ind_index += 1
+            elif sub_plot_type[0] != 'med_ratio':
+                # get a sub df of the main df according to the env_type
+                # get subset of the main dfs that contain only the coral samples
+                env_info_df = info_df[info_df['environ type'] == env_type]
+                env_QC_info_df = QC_info_df.loc[env_info_df.index.values.tolist()]
+                sys.stdout.write('\nGenerating plotting info for {} samples in subplot type {}\n'
+                                 .format(env_type, sub_plot_type))
+                # the data we are going to be plotting is so simple that rather than collecting it and then
+                # plotting it we may as well just go straight to plotting it from the df
+
+                # PLOT ABSOLUTE
+                # first plot the actual datapoints
+                # x will be the indices, y will be the actual value
+                y_values = list(env_QC_info_df.loc[:, sub_plot_type[0]])
+                x_values = [ind[ind_index] for y in y_values]
+                axarr[axarr_index].scatter(x_values, y_values, marker='.', s=1, c='b')
+
+                # now plot the mean and error bars
+                # I know there is a mean and SD function on a pandas series but it is throwing out all sorts of
+                # erros so lest stick with what we know
+                std = statistics.stdev(y_values)
+                mean = statistics.mean(y_values)
+                axarr[axarr_index].scatter(x=ind[ind_index] + 0.125, y=mean, marker='s', s=8, c='b')
+                axarr[axarr_index].errorbar(x=ind[ind_index] + 0.125, y=mean, yerr=std, fmt='none', c='b')
+
+                if env_type == 'coral':
+                    axarr[axarr_index].set_ylabel('', color='b')
+                    axarr[axarr_index].tick_params('y', colors='b')
+
+
+                # PLOT UNIQUE
+                # first plot the actual datapoints
+                # x will be the indices, y will be the actual value
+
+                y_values = list(env_QC_info_df.loc[:, sub_plot_type[1]])
+                x_values = [ind[ind_index] + 0.250 for y in y_values]
+                ax2.scatter(x_values, y_values, marker='.', s=1, c='r')
+
+                # now plot the mean and error bars
+                std = statistics.stdev(y_values)
+                mean = statistics.mean(y_values)
+
+                ax2.scatter(x=ind[ind_index] + 0.375, y=mean, marker='s', s=8, c='r')
+                ax2.errorbar(x=ind[ind_index] + 0.375, y=mean, yerr=std, fmt='none', c='r')
+
+                if env_type == 'coral':
+                    ax2.set_ylabel( '', color='r')
+                    ax2.tick_params('y', colors='r')
+                    axarr[axarr_index].spines['top'].set_visible(False)
+                    # axarr[axarr_index].spines['bottom'].set_visible(False)
+                    ax2.spines['top'].set_visible(False)
+                    # ax2.spines['bottom'].set_visible(False)
+
+                    # axarr[axarr_index].set_xticks([a + 0.1875 for a in range(6)], minor=False)
+                    # axarr[axarr_index].set_xticklabels(env_types_list)
+                    axarr[axarr_index].tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
+                    ax2.tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
+                    axarr[axarr_index].set_xlabel(y_axis_labels[axarr_index])
+                    if sub_plot_type[0] == 'post_taxa_id_absolute_non_symbiodinium_seqs':
+                        axarr[axarr_index].set_ylim((0, 150000))
+                    elif sub_plot_type[0] == 'post_taxa_id_absolute_symbiodinium_seqs':
+                        axarr[axarr_index].set_ylim((0, 800000))
+                    elif sub_plot_type[0] == 'post_med_absolute':
+                        axarr[axarr_index].set_ylim((0, 800000))
+
+                ind_index += 1
+            else:
+                # here we need to ploto out the MED ratios.
+                # these are simply going to be the med abosultes divided by the symbiodinium absolutes
+                # and same for the uniques.
+                # get a sub df of the main df according to the env_type
+                # get subset of the main dfs that contain only the coral samples
+
+                env_info_df = info_df[info_df['environ type'] == env_type]
+                env_QC_info_df = QC_info_df.loc[env_info_df.index.values.tolist()]
+                sys.stdout.write('\nGenerating plotting info for {} samples in subplot type {}\n'
+                                 .format(env_type, sub_plot_type))
+                # the data we are going to be plotting is so simple that rather than collecting it and then
+                # plotting it we may as well just go straight to plotting it from the df
+
+                # PLOT ABSOLUTE
+                # first plot the actual datapoints
+                # x will be the indices, y will be the actual value
+                y_values = [tup[0] / tup[1] for tup in zip(list(env_QC_info_df.loc[:, 'post_med_absolute']), list(
+                    env_QC_info_df.loc[:, 'post_taxa_id_absolute_symbiodinium_seqs']))]
+                x_values = [ind[ind_index] for y in y_values]
+                axarr[axarr_index].scatter(x_values, y_values, marker='.', s=1, c='b')
+
+                # now plot the mean and error bars
+                # I know there is a mean and SD function on a pandas series but it is throwing out all sorts of
+                # erros so lest stick with what we know
+                std = statistics.stdev(y_values)
+                mean = statistics.mean(y_values)
+                axarr[axarr_index].scatter(x=ind[ind_index] + 0.125, y=mean, marker='s', s=8, c='b')
+                axarr[axarr_index].errorbar(x=ind[ind_index] + 0.125, y=mean, yerr=std, fmt='none', c='b')
+
+                if env_type == 'coral':
+                    axarr[axarr_index].set_ylabel('', color='b')
+                    axarr[axarr_index].tick_params('y', colors='b')
+
+                    axarr[axarr_index].spines['top'].set_visible(False)
+                    # axarr[axarr_index].spines['bottom'].set_visible(False)
+                    ax2.spines['top'].set_visible(False)
+                    # ax2.spines['bottom'].set_visible(False)
+
+                    axarr[axarr_index].set_xticks([a + 0.1875 for a in range(6)], minor=False)
+                    axarr[axarr_index].set_xticklabels(env_types_list)
+                    axarr[axarr_index].set_xlabel('pre-MED / post-MED')
+                    axarr[axarr_index].set_ylim((0, 1.1))
+
+                # PLOT UNIQUE
+                # first plot the actual datapoints
+                # x will be the indices, y will be the actual value
+
+                y_values = [tup[0] / tup[1] for tup in zip(list(env_QC_info_df.loc[:, 'post_med_unique']), list(
+                    env_QC_info_df.loc[:, 'post_taxa_id_unique_symbiodinium_seqs']))]
+                x_values = [ind[ind_index] + 0.250 for y in y_values]
+                ax2.scatter(x_values, y_values, marker='.', s=1, c='r')
+
+                # now plot the mean and error bars
+                std = statistics.stdev(y_values)
+                mean = statistics.mean(y_values)
+
+                ax2.scatter(x=ind[ind_index] + 0.375, y=mean, marker='s', s=8, c='r')
+                ax2.errorbar(x=ind[ind_index] + 0.375, y=mean, yerr=std, fmt='none', c='r')
+
+                if env_type == 'coral':
+                    ax2.set_ylabel('', color='r')
+                    ax2.tick_params('y', colors='r')
+
                 ind_index += 1
 
 
 
 
+
+
+        axarr_index += 1
+    apples = 'asdf'
+    f.text(0, 0.65, 'ITS2 absolute sequence abundance', va='center', rotation='vertical', color='b')
+    f.text(1 - 0.01, 0.55, 'ITS2 unique sequence abundance', ha='center', va='center', rotation='vertical', color='r')
+    f.text(0.07, 0.18, 'ratio', va='center', rotation='vertical', color='b')
+    f.text(1 - 0.05, 0.18, 'ratio', va='center', rotation='vertical', color='r')
+
+
+    plt.tight_layout()
+    f.savefig('diversity_stats.svg')
+    f.show()
     return
+
+def make_venns():
+    ''' Here we will aim to make venn diagrams we will make a set of three 2 cirle venns which will
+    just show the comparison of the env_samples to the coral.
+    We will also make a set of four 3 circle venn diagrams which will show all 3 way combinations.
+    There is a neat little module called matplotlib_venn which we can use to do this and it is dead simple.
+    All you need to do is pass it a list of sets.'''
+
+    # read in the dataframes created previously
+    sp_output_df = pickle.load(open('sp_output_df.pickle', 'rb'))
+    QC_info_df = pickle.load(open('QC_info_df.pickle', 'rb'))
+    info_df = pickle.load(open('info_df.pickle', 'rb'))
+
+    # create a dictionary that is sample name to env_type
+    sample_name_to_sample_type_dict = {}
+    for info_index in info_df.index.values.tolist():
+        if info_df.loc[info_index, 'environ type'] == 'coral':
+            sample_name_to_sample_type_dict[info_df.loc[info_index, 'sample_name']] = 'coral'
+        elif info_df.loc[info_index, 'environ type'] == 'sea_water':
+            sample_name_to_sample_type_dict[info_df.loc[info_index, 'sample_name']] = 'sea_water'
+        elif info_df.loc[info_index, 'environ type'] == 'sed_far':
+            sample_name_to_sample_type_dict[info_df.loc[info_index, 'sample_name']] = 'sed'
+        elif info_df.loc[info_index, 'environ type'] == 'sed_close':
+            sample_name_to_sample_type_dict[info_df.loc[info_index, 'sample_name']] = 'sed'
+        elif info_df.loc[info_index, 'environ type'] == 'mucus':
+            sample_name_to_sample_type_dict[info_df.loc[info_index, 'sample_name']] = 'mucus'
+        elif info_df.loc[info_index, 'environ type'] == 'turf':
+            sample_name_to_sample_type_dict[info_df.loc[info_index, 'sample_name']] = 'turf'
+
+    # here we have the dict populated and we can now get to work pulling out the set of sequence
+    # names found in each of the sample types
+    sample_types = ['coral', 'sea_water', 'sed', 'mucus', 'turf']
+
+    set_list = [set() for type in sample_types]
+
+    # now work through the sp output and check to see which columns are non-zero columns and add these column
+    # labels into the respective sets
+    for sp_output_index in sp_output_df.index.values.tolist():
+        type_of_sample  = sample_name_to_sample_type_dict[sp_output_df.loc[sp_output_index, 'sample_name']]
+        non_zero_seqs = list(sp_output_df.loc[sp_output_index][sp_output_df.loc[sp_output_index] > 0].index)
+        set_list[sample_types.index(type_of_sample)].update(non_zero_seqs)
+
+    # here we should have the sets populated
+    # now create a dictionary that is the sample_type name to the set
+
+    # then simply do permutations for the 4 x 3
+
+    # and maybe manually do the three venns using the sets
+    
+
+
 
 def get_colour_list():
     colour_list = ["#FFFF00", "#1CE6FF", "#FF34FF", "#FF4A46", "#008941", "#006FA6", "#A30059", "#FFDBE5",
@@ -545,4 +779,4 @@ def get_coral_to_mucus_dict():
 
     return coral_info_name_to_muc_info_name_dict
 
-create_quan_diversity_figs()
+make_venns()
