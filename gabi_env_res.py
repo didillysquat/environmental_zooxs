@@ -335,7 +335,7 @@ def create_diverstiy_figs():
             # if it is in this list then we still need to grab a rectangle for plotting
             # the legend. Once we have grabbed the rectangle then we should remove the seq from the top_n_seqs list
             seq_name = list_of_seqs[i]
-            top_n_seqs_done = []
+
             if seq_name in top_n_seqs_to_get and seq_name not in top_n_seqs_done:
                 # then this is a seq that we still need to get a rectangle for the legend
                 legend_rectangle_holder[top_n_seqs_to_get.index(seq_name)].append(bar_list[-1][0])
@@ -375,7 +375,881 @@ def create_diverstiy_figs():
     f.savefig('diversity_bars.svg')
     f.show()
 
+def create_diverstiy_figs_all_dates():
+    ''' This is a development from the above code. Here in this code we will plot all of the date replicates
+    for the env_samples as these could in theory aid a little bit in the diversity comparison.
+    I will put these on the same axis as the samples of the same type with a gap or so inbetween.
+    This will be the code to create the diversity figure for Gabi's paper.
+        We have used symportal to do the QC work on the samples.
+        As such we have tab delimited outputs that we can read into pandas dataframes
+        We also have the info list from Gabi that contains what all of the samples are
+        Esentially what we want to do is quite simple, however, we will need to be careful with the colouring
+        As there are going to be a shed ton of sequences we will probably want to order the sequences found some how
+        and colour those, then maybe colour sequences found at below 5% to grey. Something like that.
+        I have a load of code from previous work when we were trying to look for actual SymPortal ITS2 type profiles
+        within the env samples but we are no longer doing that. Still some of the code below might be useful.
+        Actually I'm going to drop it into a junk code def and start from scratch here.
+    '''
 
+    try:
+        sp_output_df = pickle.load(open('sp_output_df_all_dates.pickle', 'rb'))
+        QC_info_df= pickle.load(open('QC_info_df_all_dates.pickle', 'rb'))
+        info_df = pickle.load(open('info_df_all_dates.pickle', 'rb'))
+    except:
+        # read in the SymPortal output
+        sp_output_df = pd.read_csv('131_142.DIVs.absolute.txt', sep='\t', lineterminator='\n')
+
+        # The SP output contains the QC info columns between the DIVs and the no_name ITS2 columns.
+        # lets put the QC info columns into a seperate df.
+        QC_info_df = sp_output_df[['Samples','raw_contigs', 'post_qc_absolute_seqs', 'post_qc_unique_seqs',
+                                'post_taxa_id_absolute_symbiodinium_seqs', 'post_taxa_id_unique_symbiodinium_seqs',
+                                'post_taxa_id_absolute_non_symbiodinium_seqs', 'post_taxa_id_unique_non_symbiodinium_seqs',
+                                   'size_screening_violation_absolute', 'size_screening_violation_unique',
+                                   'post_med_absolute', 'post_med_unique']]
+
+        # now lets drop the QC columns from the SP output df and also drop the clade summation columns
+        # we will be left with just clumns for each one of the sequences found in the samples
+        sp_output_df.drop(columns=['noName Clade A', 'noName Clade B', 'noName Clade C', 'noName Clade D',
+                                'noName Clade E', 'noName Clade F', 'noName Clade G', 'noName Clade H',
+                                'noName Clade I', 'raw_contigs', 'post_qc_absolute_seqs', 'post_qc_unique_seqs',
+                                'post_taxa_id_absolute_symbiodinium_seqs', 'post_taxa_id_unique_symbiodinium_seqs',
+                                'post_taxa_id_absolute_non_symbiodinium_seqs', 'post_taxa_id_unique_non_symbiodinium_seqs',
+                                   'size_screening_violation_absolute', 'size_screening_violation_unique',
+                                   'post_med_absolute', 'post_med_unique'
+                                   ]
+                          , inplace=True)
+
+        # read in the info file
+        info_df = pd.read_csv('info_300718.csv')
+
+        # we no longer drop the dates
+        # drop the rows that aren't from the 22.08.2016 data
+        info_df = info_df[info_df['coral genus'] != 'Sponge']
+        # need to use the ampersand rather than 'and': https://stackoverflow.com/questions/36921951/truth-value-of-a-series-is-ambiguous-use-a-empty-a-bool-a-item-a-any-o
+        info_df = info_df[(info_df['Sample no.'] != 'negative extration') & (info_df['Sample no.'] != 'negative pcr') & (info_df['Sample no.'] != 'DIV_accession')]
+
+        # Now we need to link the SP output to the sample names in the excel. Annoyingly they are formatted
+        # slightly differently so we can't make a direct comparison.
+        # easiest way to link them is to see if the first part of the SP name is the same as the first part
+        # of the 'sequence file' in the meta info
+        # when doing this we can also drop the SP info for those samples that won't be used i.e. those that
+        # aren't now in the info_df
+
+        # firstly rename the colums so that they are 'sample_name' in all of the dfs
+        QC_info_df.rename(index=str, columns={'Samples': 'sample_name'}, inplace=True)
+        sp_output_df.rename(index=str, columns={'Samples': 'sample_name'}, inplace=True)
+        info_df.rename(index=str, columns={'Sample Name': 'sample_name'}, inplace=True)
+
+        indices_to_drop = []
+        for sp_index in sp_output_df.index.values.tolist():
+            # keep track of whether the sp_index was found in the info table
+            # if it wasn't then it should be dropped
+            sys.stdout.write('\rsp_index: {}'.format(sp_index))
+            found = False
+            for info_index in info_df.index.values.tolist():
+                if sp_output_df.loc[sp_index, 'sample_name'].split('_')[0] == info_df.loc[info_index, 'Sequence file'].split('_')[0]:
+                    found = True
+                    # then these are a related set of rows and we should make the sample_names the same
+                    sp_output_df.loc[sp_index, 'sample_name'] = info_df.loc[info_index, 'sample_name']
+                    QC_info_df.loc[sp_index, 'sample_name'] = info_df.loc[info_index, 'sample_name']
+
+
+            if not found:
+                indices_to_drop.append(sp_index)
+
+        # drop the rows from the SP output tables that aren't going to be used
+        sp_output_df.drop(inplace=True, index=indices_to_drop)
+        QC_info_df.drop(inplace=True, index=indices_to_drop)
+
+        # let's sort out the 'environ type' column in the info_df
+        # currently it is a bit of a mess
+        for index in info_df.index.values.tolist():
+            if 'coral' in info_df.loc[index, 'Sample no.']:
+                info_df.loc[index, 'environ type'] = 'coral'
+            elif 'seawater' in info_df.loc[index, 'Sample no.']:
+                info_df.loc[index, 'environ type'] = 'sea_water'
+            elif 'mucus' in info_df.loc[index, 'Sample no.']:
+                info_df.loc[index, 'environ type'] = 'mucus'
+            elif 'SA' in info_df.loc[index, 'Sample no.']:
+                info_df.loc[index, 'environ type'] = 'sed_close'
+            elif 'SB' in info_df.loc[index, 'Sample no.']:
+                info_df.loc[index, 'environ type'] = 'sed_far'
+            elif 'TA' in info_df.loc[index, 'Sample no.']:
+                info_df.loc[index, 'environ type'] = 'turf'
+
+        # now clean up the df indices
+        info_df.index = range(len(info_df))
+        sp_output_df.index = range(len(sp_output_df))
+        QC_info_df.index = range(len(QC_info_df))
+
+        # make the sample_name column the index for each of the datasets
+        info_df.set_index('sample_name', inplace=True)
+        sp_output_df.set_index('sample_name', inplace=True)
+        QC_info_df.set_index('sample_name', inplace=True)
+
+        # pickle the out put and put a check in place to see if we need to do the above
+        pickle.dump(sp_output_df, open('sp_output_df_all_dates.pickle', 'wb'))
+        pickle.dump(QC_info_df, open('QC_info_df_all_dates.pickle', 'wb'))
+        pickle.dump(info_df, open('info_df_all_dates.pickle', 'wb'))
+
+
+
+    # so we want to plot the ITS2 sequence diversity in each of the samples as bar charts
+    # We are going to have a huge diversity of sequences to deal with so I think something along the lines
+    # of plotting the top n most abundant sequences. The term 'most abundant' should be considered carefully here
+    # I think it will be best if we work on a sample by sample basis. i.e. we pick the n sequences that have the
+    # highest representation in any one sample. So for example what we are not doing is seeing how many times
+    # C3 was sequenced across all of the samples, and finding that it is a lot and therefore plotting it.
+    # we are looking in each of the samples and seeing the highest proportion it is found at in any one sample.
+    # This way we should have the best chance of having a coloured representation for each sample's most abundant
+    # sequence.
+
+    # to start lets go sample by sample and see what the highest prop for each seq is.
+
+    # dict to hold info on which sample and what the proportion is for each sequence
+    # key = sequence name, value = tup ( sample name, relative abundance)
+    try:
+        seq_rel_abund_calculator_dict = pickle.load(open('seq_rel_abund_calculator_dict_all_dates.pickle', 'rb'))
+    except:
+        seq_rel_abund_calculator_dict = {}
+        for sample_index in sp_output_df.index.values.tolist():
+            sys.stdout.write('\nGeting rel seq abundances from {}\n'.format(sample_index))
+            # temp_prop_array = sp_output_df.loc[sample_index].div(sp_output_df.loc[sample_index].sum(axis='index'))
+            temp_prop_array = sp_output_df.loc[sample_index].div(sp_output_df.loc[sample_index].sum())
+            for seq_name in temp_prop_array.keys():
+                sys.stdout.write('\rseq: {}'.format(seq_name))
+                val = temp_prop_array[seq_name]
+                if val != 0:  # if the sequences was found in the sample
+                    # If the sequence is already in the dict
+                    if seq_name in seq_rel_abund_calculator_dict.keys():
+                        # check to seee if the rel abundance is larger than the one already logged
+                        if val > seq_rel_abund_calculator_dict[seq_name][1]:
+                            seq_rel_abund_calculator_dict[seq_name] = (sample_index, val)
+                    # if we haven't logged for this sequence yet, then add this as the first log
+                    else:
+                        seq_rel_abund_calculator_dict[seq_name] = (sample_index, val)
+        pickle.dump(seq_rel_abund_calculator_dict, open('seq_rel_abund_calculator_dict_all_dates.pickle', 'wb'))
+
+
+
+    # here we have a dict that contains the largest rel_abundances per sample for each of the seqs
+    # now we can sort this to look at the top ? n sequences to start with (I'm not sure how the colouring will
+    # look like so lets just start with 30 and see where we get to)
+    sorted_list = sorted(seq_rel_abund_calculator_dict.items(), key = lambda x: x[1][1], reverse=True)
+    most_abund_seq_names = [tup[0] for tup in sorted_list]
+
+    # from the above sorted list we can then plot these sequences with colour and all others with grey scale
+    # lets make a coulour dictionary for the most common types
+    colour_list = get_colour_list()
+    colour_dict = {}
+    num_coloured_seqs = 30
+
+    # we will also need a grey palette for those sequences that are not the ones being annotated
+    grey_palette = ['#D0CFD4', '#89888D', '#4A4A4C', '#8A8C82', '#D4D5D0', '#53544F']
+
+    # make the dict
+    for i in range(len(most_abund_seq_names)):
+        if i < num_coloured_seqs:
+            colour_dict[most_abund_seq_names[i]] = colour_list[i]
+        else:
+            colour_dict[most_abund_seq_names[i]] = grey_palette[i % 6]
+
+    # add the 'low' key and assign it to grey for later on
+    # the low category will be created later on to hold the grouped abundances of sequences in samples
+    # below a certain rel abund cutoff
+    colour_dict['low'] = '#D0CFD4'
+
+    # for plotting we will also need to collect the 'rectangle' objects from the plotting process to use to make
+    # the legend which we will display on the plot right at the end
+    # this is going to be a little tricky to collect as not every sample type group that we are plotting
+    # is going to have all of the top n sequences. So, we will have to pick up rectangles when they come up in
+    # the plotting.
+    # to keep track of which sequences we need we have:
+    top_n_seqs_to_get = most_abund_seq_names[:num_coloured_seqs]
+    # to keep track of which sequences we have already collected we have:
+    top_n_seqs_done = []
+    #finally to collect the rectangles and store them in order despite collecting them out of order we have:
+    legend_rectangle_holder = [[] for i in range(num_coloured_seqs)]
+
+
+    # set up the plotting environment
+    # one plot for coral, mucus, seawater, sediment, turf_algae
+    # f, axarr = plt.subplots(4, 5)
+    # # counter to reference which set of axes we are plotting on
+    # axarr_index = 0
+
+    # rather than work with the subplot standard layout we will use subplot2grid for our set up and have some hard
+    # coded axes
+    # ax1 = (plt.subplot2grid((6, 5), (0, 0), colspan=3), 'coral', '22.08.2016')
+    # ax2 = (plt.subplot2grid((6, 5), (0, 3), colspan=2), 'coral', '06.09.2016')
+    # ax3 = (plt.subplot2grid((6, 5), (1, 0), colspan=3), 'mucus', '22.08.2016')
+
+
+    ax_list = [
+        # coral
+        (plt.subplot2grid((6, 5), (0, 0), colspan=3), 'coral', '22.08.2016'),
+        (plt.subplot2grid((6, 5), (0, 3), colspan=2), 'coral', '06.09.2016'),
+        # mucus
+        (plt.subplot2grid((6, 5), (1, 0), colspan=3), 'mucus', '22.08.2016'),
+        (plt.subplot2grid((6, 5), (1, 3), colspan=2), 'mucus', '06.09.2016'),
+        # sea water
+        (plt.subplot2grid((6, 5), (2, 0), colspan=1), 'sea_water', '22.08.2016'),
+        (plt.subplot2grid((6, 5), (2, 1), colspan=1), 'sea_water', '31.08.2016'),
+        (plt.subplot2grid((6, 5), (2, 2), colspan=1), 'sea_water', '01.09.2016'),
+        (plt.subplot2grid((6, 5), (2, 3), colspan=1), 'sea_water', '06.09.2016'),
+        (plt.subplot2grid((6, 5), (2, 4), colspan=1), 'sea_water', '02.10.2016'),
+        # sed_close
+        (plt.subplot2grid((6, 5), (3, 0), colspan=1), 'sed_close', '22.08.2016'),
+        (plt.subplot2grid((6, 5), (3, 1), colspan=1), 'sed_close', '31.08.2016'),
+        (plt.subplot2grid((6, 5), (3, 2), colspan=1), 'sed_close', '01.09.2016'),
+        (plt.subplot2grid((6, 5), (3, 3), colspan=1), 'sed_close', '06.09.2016'),
+        (plt.subplot2grid((6, 5), (3, 4), colspan=1), 'sed_close', '02.10.2016'),
+        # sed_far,
+        (plt.subplot2grid((6, 5), (4, 0), colspan=1), 'sed_far', '22.08.2016'),
+        (plt.subplot2grid((6, 5), (4, 1), colspan=1), 'sed_far', '31.08.2016'),
+        (plt.subplot2grid((6, 5), (4, 2), colspan=1), 'sed_far', '01.09.2016'),
+        (plt.subplot2grid((6, 5), (4, 3), colspan=1), 'sed_far', '06.09.2016'),
+        (plt.subplot2grid((6, 5), (4, 4), colspan=1), 'sed_far', '02.10.2016'),
+        # turf,
+        (plt.subplot2grid((6, 5), (5, 0), colspan=1), 'turf', '22.08.2016'),
+        (plt.subplot2grid((6, 5), (5, 1), colspan=1), 'turf', '31.08.2016'),
+        (plt.subplot2grid((6, 5), (5, 2), colspan=1), 'turf', '01.09.2016'),
+        (plt.subplot2grid((6, 5), (5, 3), colspan=1), 'turf', '06.09.2016'),
+        (plt.subplot2grid((6, 5), (5, 4), colspan=1), 'turf', '02.10.2016')
+    ]
+
+
+
+    # now we need to get the actual plotting information for each of the samples.
+    # we can do this sample type by sample type
+    # we will create a local dataframe that will be a sub set of the main sp output dataframe but will
+    # only contain the samples of the given sample type. It will also eventually only contain the sequence
+    # information for the sample type in question. Normally I would make a 2D list to hold the plotting
+    # information but in this case having all of the information in a dataframe is working really well and
+    # this is how I will do it in future.
+
+    # go environment type by environment type
+    # env_type_list = ['coral', 'mucus', 'sea_water', 'sed_close', 'sed_far', 'turf']
+    # env_type_list = ['sea_water', 'sed_close', 'sed_far', 'turf']
+    # for env_type in env_type_list:
+    #     # then go date by date
+    #     date_list = ['22.08.2016', '31.08.2016', '01.09.2016', '06.09.2016', '02.10.2016']
+    #     for date in date_list:
+    for ax_item in ax_list:
+        sys.stdout.write('\nGenerating plotting info for {} samples {}\n'.format(ax_item[1], ax_item[2]))
+        # currently we have something like 4000 sequences to plot which is too may
+        # I think it will be much easier if we group the sequences that are found below a certain
+        # threshold. I think the best way to do this is to create a slice of the main df that
+        # contain the information for the samples of the env_type only
+
+        # get subset of the main dfs that contain only the env_type samples from the given date
+        env_info_df = info_df[(info_df['environ type'] == ax_item[1]) & (info_df['date collected'] == ax_item[2])]
+
+        # we need to drop any samples that have only zeros in their columns
+        # https://stackoverflow.com/questions/22649693/drop-rows-with-all-zeros-in-pandas-data-frame
+        env_info_df = env_info_df[(env_info_df.T != 0).any()]
+
+
+        env_sp_output_df = sp_output_df.loc[env_info_df.index.values.tolist()]
+
+        # we need to drop any samples that have only zeros in their columns
+        # https://stackoverflow.com/questions/22649693/drop-rows-with-all-zeros-in-pandas-data-frame
+        env_sp_output_df = env_sp_output_df[(env_sp_output_df.T != 0).any()]
+
+        # append a 'low' columns to the env_sp_ouput_df and populate with 0s
+        env_sp_output_df['low'] = 0
+        # now make a proportions version of the df, rather than absolute counts
+        env_sp_output_df_prop = env_sp_output_df[:].div(env_sp_output_df[:].sum(axis=1), axis=0)
+
+        # now as we work our way through we can sum up the low sequences into this column
+        # we can then check for 0 columns and drop these.
+
+        # get a list of the sequences found in the collection of samples of the given type and order
+        # them according to summed rel_abundance acorss all samples. This should be the order in which
+        # the samples are plotted
+        # at the same time we can get the info we need for plotting
+
+        summed_seq_rel_abund_across_smpls_dict = {seq: 0 for seq in list(sp_output_df)}
+
+        # we are also going to need to put the samples in an order that makes sense.
+        # Ideally I would like to take the time to do a proper travelling salesman analysis
+        # and I was thinking of putting in an ant colony system to do this but...
+        # I'm not sure we've got time for that. So let's do something a little more simple which
+        # should still be effective and look groovy
+        # Lets sort according to the majority sequence. I.e. lets put the samples into groups that
+        # are defined by what their majorty sequence is, then lets plot in order of those groups.
+        # within the groups we will plot in the order of the most abundant rel abund first.
+        # to get this information we will have a dict to collect it. The key of the dict will
+        # be the majority sequence with the value being a list that contains tuples. One tuple
+        # for each sample in the list which will contain the sample_name and the re abund of the maj seq
+
+        # Dict for holding the sample_sorting info
+        sample_sorting_info_dict = defaultdict(list)
+
+        for sp_index in env_sp_output_df_prop.index.values.tolist():
+            sys.stdout.write('\r{}'.format(sp_index))
+            # we need to get the name of the most abundant sequence and its rel abund for each sample
+            # for the sample_sorting_info_dict
+            most_abund_seq_name = env_sp_output_df_prop.loc[sp_index].idxmax(axis='index')
+
+            rel_abund_of_most_abund_seq = env_sp_output_df_prop.loc[sp_index, most_abund_seq_name]
+
+            apples = 'asdf'
+            sample_sorting_info_dict[most_abund_seq_name].append((sp_index, rel_abund_of_most_abund_seq))
+            # Put its seq rel abundances ino the summed_seq_rel_abund_across... dict
+
+            for non_zero_seq in env_sp_output_df_prop.loc[sp_index][env_sp_output_df_prop.loc[sp_index] > 0].index:  # not including the final 'low' columns (this will be zero)
+                val = env_sp_output_df_prop.loc[sp_index, non_zero_seq]
+                # be sure to count the value of this cell and using it in judging which are the most
+                # abundant sequences before we check whether to relegate it to the 'low' column
+                summed_seq_rel_abund_across_smpls_dict[non_zero_seq] += val
+                if val < 0.005:
+                    env_sp_output_df_prop.loc[sp_index, 'low'] += val
+                    env_sp_output_df_prop.loc[sp_index, non_zero_seq] = 0
+
+
+        # here we can get a sorted sample list using the sample_sorting_info_dict
+        sorted_sample_list = []
+        # we want to work through the sample_sorting_info_dict by the longest lists first
+        sorted_keys_for_sample_sort = \
+            [tup[0] for tup in sorted(sample_sorting_info_dict.items(), key=lambda x: len(x[1]), reverse=True)]
+        # for each of teh maj seq groups
+        for sorted_key in sorted_keys_for_sample_sort:
+            # now within each of these lists we want to order according to the rel_abundance of the sequences
+            sorted_list_of_samples_of_group = [tup[0] for tup in sorted(sample_sorting_info_dict[sorted_key], key=lambda x: x[1], reverse=True)]
+            sorted_sample_list.extend(sorted_list_of_samples_of_group)
+
+        # now we should re-order the df so that it is in the sample order of sorted_sample_list
+        env_sp_output_df_prop = env_sp_output_df_prop.reindex(sorted_sample_list)
+
+        # here we have a dict that contains the abundances of the seqs for the coral samples
+        # we will plot the coral samples' seqs in the order of the sequences in this dict
+        sorted_list_of_env_specific_seqs_tup \
+            = sorted(summed_seq_rel_abund_across_smpls_dict.items(), key=lambda x: x[1], reverse=True)
+        sorted_list_of_env_specific_seqs = [tup[0] for tup in sorted_list_of_env_specific_seqs_tup]
+
+        # Now we check for zero only columns and drop them
+        # we also need to remove these columns from the sorted
+        non_zero_cols = list(env_sp_output_df_prop.loc[:, (env_sp_output_df_prop != 0).any(axis=0)])
+        sorted_list_of_env_specific_seqs = [seq for seq in sorted_list_of_env_specific_seqs if seq in non_zero_cols]
+
+        # add the 'low' column only if the 'low' column is a non-zero column, i.e. used
+        if 'low' in non_zero_cols:
+            sorted_list_of_env_specific_seqs.append('low')
+
+        # now drop the cols
+        env_sp_output_df_prop = env_sp_output_df_prop[non_zero_cols]
+
+        # we also have the plotting list which contains the info we will be plotting.
+
+        # the plotting_list is currently organised in a different order to that of the sorted_list_of_env...
+        # we need to change this order
+        env_sp_output_df_prop = env_sp_output_df_prop[sorted_list_of_env_specific_seqs]
+
+        # we now need to transpose this
+        env_sp_output_df_prop = env_sp_output_df_prop.transpose()
+
+        # here we finally have the plotting lists in the order of the sorted_list_of_env
+        bottom = [0 for smp in list(env_sp_output_df_prop)]
+        bar_list = []
+        # for each sample
+        plotting_indices = range(len(list(env_sp_output_df_prop)))
+
+        # for each sequence
+        list_of_seqs = env_sp_output_df_prop.index.values.tolist()
+        for i in range(len(list_of_seqs)):
+
+            sys.stdout.write('\r{}/{}'.format(i, len(list(env_sp_output_df_prop.iloc[:, 0]))))
+            bar_list.append(ax_item[0].bar(plotting_indices, list(env_sp_output_df_prop.iloc[i]), 1, bottom,
+                                                   color=colour_dict[sorted_list_of_env_specific_seqs[i]]))
+            bottom = [L + M for L, M in zip(bottom, list(env_sp_output_df_prop.iloc[i]))]
+
+            # check to see if the seq we are plotting is still in the top_n_seqs list
+            # if it is in this list then we still need to grab a rectangle for plotting
+            # the legend. Once we have grabbed the rectangle then we should remove the seq from the top_n_seqs list
+            seq_name = list_of_seqs[i]
+
+            if seq_name in top_n_seqs_to_get and seq_name not in top_n_seqs_done:
+                # then this is a seq that we still need to get a rectangle for the legend
+                legend_rectangle_holder[top_n_seqs_to_get.index(seq_name)].append(bar_list[-1][0])
+                top_n_seqs_done.append(seq_name)
+
+        # https://stackoverflow.com/questions/12998430/remove-xticks-in-a-matplotlib-plot
+        ax_item[0].tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
+        # https://stackoverflow.com/questions/15858192/how-to-set-xlim-and-ylim-for-a-subplot-in-matplotlib
+        ax_item[0].set_xlim((-0.5, (len(list(env_sp_output_df_prop)) - 0.5)))
+        # https://stackoverflow.com/questions/925024/how-can-i-remove-the-top-and-right-axis-in-matplotlib
+        ax_item[0].spines['right'].set_visible(False)
+        ax_item[0].spines['top'].set_visible(False)
+
+        # To make the legend for this mo fo is going to be a little tricky. The legend argument basically takes
+        # two lists. The first list should contain a rectangle object for each of the sequences (this
+        # will be the coloured box). We get this object from the bar objects that we are creating.
+        # The second list is a list of the labels. This should be easier. We can just use the
+        # most_abund_seq_names[:30] for these.
+        # to grab the rectangles, I think its best to pick them up during the plotting and hold them in a list
+        # outside of the subplot loop. We will need a holder for the objects to populate.
+
+        #https://matplotlib.org/api/_as_gen/matplotlib.axes.Axes.set_xticks.html#matplotlib.axes.Axes.set_xticks
+        ax_item[0].set_yticks([1], minor=False)
+        #https://matplotlib.org/api/_as_gen/matplotlib.axes.Axes.set_xticklabels.html#matplotlib.axes.Axes.set_xticklabels
+        ax_item[0].set_yticklabels(['1'])
+        ax_item[0].set_xlabel('{}_{}'.format(ax_item[1], ax_item[2]))
+
+
+
+
+
+    #https://stackoverflow.com/questions/16150819/common-xlabel-ylabel-for-matplotlib-subplots/26892326
+    f.text(0, 0.5, 'ITS2 sequence relative abundance', va='center', rotation='vertical')
+    ordered_rectange_list = [sub_list[0] for sub_list in legend_rectangle_holder]
+    f.legend(ordered_rectange_list, top_n_seqs_to_get, loc='lower center')
+    plt.tight_layout()
+    f.savefig('diversity_bars.svg')
+    f.show()
+
+def create_diverstiy_figs_all_dates_backup():
+    ''' This is a development from the above code. Here in this code we will plot all of the date replicates
+    for the env_samples as these could in theory aid a little bit in the diversity comparison.
+    I will put these on the same axis as the samples of the same type with a gap or so inbetween.
+    This will be the code to create the diversity figure for Gabi's paper.
+        We have used symportal to do the QC work on the samples.
+        As such we have tab delimited outputs that we can read into pandas dataframes
+        We also have the info list from Gabi that contains what all of the samples are
+        Esentially what we want to do is quite simple, however, we will need to be careful with the colouring
+        As there are going to be a shed ton of sequences we will probably want to order the sequences found some how
+        and colour those, then maybe colour sequences found at below 5% to grey. Something like that.
+        I have a load of code from previous work when we were trying to look for actual SymPortal ITS2 type profiles
+        within the env samples but we are no longer doing that. Still some of the code below might be useful.
+        Actually I'm going to drop it into a junk code def and start from scratch here.
+    '''
+
+    try:
+        sp_output_df = pickle.load(open('sp_output_df_all_dates.pickle', 'rb'))
+        QC_info_df = pickle.load(open('QC_info_df_all_dates.pickle', 'rb'))
+        info_df = pickle.load(open('info_df_all_dates.pickle', 'rb'))
+    except:
+        # read in the SymPortal output
+        sp_output_df = pd.read_csv('131_142.DIVs.absolute.txt', sep='\t', lineterminator='\n')
+
+        # The SP output contains the QC info columns between the DIVs and the no_name ITS2 columns.
+        # lets put the QC info columns into a seperate df.
+        QC_info_df = sp_output_df[['Samples', 'raw_contigs', 'post_qc_absolute_seqs', 'post_qc_unique_seqs',
+                                   'post_taxa_id_absolute_symbiodinium_seqs',
+                                   'post_taxa_id_unique_symbiodinium_seqs',
+                                   'post_taxa_id_absolute_non_symbiodinium_seqs',
+                                   'post_taxa_id_unique_non_symbiodinium_seqs',
+                                   'size_screening_violation_absolute', 'size_screening_violation_unique',
+                                   'post_med_absolute', 'post_med_unique']]
+
+        # now lets drop the QC columns from the SP output df and also drop the clade summation columns
+        # we will be left with just clumns for each one of the sequences found in the samples
+        sp_output_df.drop(columns=['noName Clade A', 'noName Clade B', 'noName Clade C', 'noName Clade D',
+                                   'noName Clade E', 'noName Clade F', 'noName Clade G', 'noName Clade H',
+                                   'noName Clade I', 'raw_contigs', 'post_qc_absolute_seqs', 'post_qc_unique_seqs',
+                                   'post_taxa_id_absolute_symbiodinium_seqs',
+                                   'post_taxa_id_unique_symbiodinium_seqs',
+                                   'post_taxa_id_absolute_non_symbiodinium_seqs',
+                                   'post_taxa_id_unique_non_symbiodinium_seqs',
+                                   'size_screening_violation_absolute', 'size_screening_violation_unique',
+                                   'post_med_absolute', 'post_med_unique'
+                                   ]
+                          , inplace=True)
+
+        # read in the info file
+        info_df = pd.read_csv('info_300718.csv')
+
+        # we no longer drop the dates
+        # drop the rows that aren't from the 22.08.2016 data
+        info_df = info_df[info_df['coral genus'] != 'Sponge']
+        # need to use the ampersand rather than 'and': https://stackoverflow.com/questions/36921951/truth-value-of-a-series-is-ambiguous-use-a-empty-a-bool-a-item-a-any-o
+        info_df = info_df[
+            (info_df['Sample no.'] != 'negative extration') & (info_df['Sample no.'] != 'negative pcr') & (
+                        info_df['Sample no.'] != 'DIV_accession')]
+
+        # Now we need to link the SP output to the sample names in the excel. Annoyingly they are formatted
+        # slightly differently so we can't make a direct comparison.
+        # easiest way to link them is to see if the first part of the SP name is the same as the first part
+        # of the 'sequence file' in the meta info
+        # when doing this we can also drop the SP info for those samples that won't be used i.e. those that
+        # aren't now in the info_df
+
+        # firstly rename the colums so that they are 'sample_name' in all of the dfs
+        QC_info_df.rename(index=str, columns={'Samples': 'sample_name'}, inplace=True)
+        sp_output_df.rename(index=str, columns={'Samples': 'sample_name'}, inplace=True)
+        info_df.rename(index=str, columns={'Sample Name': 'sample_name'}, inplace=True)
+
+        indices_to_drop = []
+        for sp_index in sp_output_df.index.values.tolist():
+            # keep track of whether the sp_index was found in the info table
+            # if it wasn't then it should be dropped
+            sys.stdout.write('\rsp_index: {}'.format(sp_index))
+            found = False
+            for info_index in info_df.index.values.tolist():
+                if sp_output_df.loc[sp_index, 'sample_name'].split('_')[0] == \
+                        info_df.loc[info_index, 'Sequence file'].split('_')[0]:
+                    found = True
+                    # then these are a related set of rows and we should make the sample_names the same
+                    sp_output_df.loc[sp_index, 'sample_name'] = info_df.loc[info_index, 'sample_name']
+                    QC_info_df.loc[sp_index, 'sample_name'] = info_df.loc[info_index, 'sample_name']
+
+            if not found:
+                indices_to_drop.append(sp_index)
+
+        # drop the rows from the SP output tables that aren't going to be used
+        sp_output_df.drop(inplace=True, index=indices_to_drop)
+        QC_info_df.drop(inplace=True, index=indices_to_drop)
+
+        # let's sort out the 'environ type' column in the info_df
+        # currently it is a bit of a mess
+        for index in info_df.index.values.tolist():
+            if 'coral' in info_df.loc[index, 'Sample no.']:
+                info_df.loc[index, 'environ type'] = 'coral'
+            elif 'seawater' in info_df.loc[index, 'Sample no.']:
+                info_df.loc[index, 'environ type'] = 'sea_water'
+            elif 'mucus' in info_df.loc[index, 'Sample no.']:
+                info_df.loc[index, 'environ type'] = 'mucus'
+            elif 'SA' in info_df.loc[index, 'Sample no.']:
+                info_df.loc[index, 'environ type'] = 'sed_close'
+            elif 'SB' in info_df.loc[index, 'Sample no.']:
+                info_df.loc[index, 'environ type'] = 'sed_far'
+            elif 'TA' in info_df.loc[index, 'Sample no.']:
+                info_df.loc[index, 'environ type'] = 'turf'
+
+        # now clean up the df indices
+        info_df.index = range(len(info_df))
+        sp_output_df.index = range(len(sp_output_df))
+        QC_info_df.index = range(len(QC_info_df))
+
+        # make the sample_name column the index for each of the datasets
+        info_df.set_index('sample_name', inplace=True)
+        sp_output_df.set_index('sample_name', inplace=True)
+        QC_info_df.set_index('sample_name', inplace=True)
+
+        # pickle the out put and put a check in place to see if we need to do the above
+        pickle.dump(sp_output_df, open('sp_output_df_all_dates.pickle', 'wb'))
+        pickle.dump(QC_info_df, open('QC_info_df_all_dates.pickle', 'wb'))
+        pickle.dump(info_df, open('info_df_all_dates.pickle', 'wb'))
+
+    # so we want to plot the ITS2 sequence diversity in each of the samples as bar charts
+    # We are going to have a huge diversity of sequences to deal with so I think something along the lines
+    # of plotting the top n most abundant sequences. The term 'most abundant' should be considered carefully here
+    # I think it will be best if we work on a sample by sample basis. i.e. we pick the n sequences that have the
+    # highest representation in any one sample. So for example what we are not doing is seeing how many times
+    # C3 was sequenced across all of the samples, and finding that it is a lot and therefore plotting it.
+    # we are looking in each of the samples and seeing the highest proportion it is found at in any one sample.
+    # This way we should have the best chance of having a coloured representation for each sample's most abundant
+    # sequence.
+
+    # to start lets go sample by sample and see what the highest prop for each seq is.
+
+    # dict to hold info on which sample and what the proportion is for each sequence
+    # key = sequence name, value = tup ( sample name, relative abundance)
+    try:
+        seq_rel_abund_calculator_dict = pickle.load(open('seq_rel_abund_calculator_dict_all_dates.pickle', 'rb'))
+    except:
+        seq_rel_abund_calculator_dict = {}
+        for sample_index in sp_output_df.index.values.tolist():
+            sys.stdout.write('\nGeting rel seq abundances from {}\n'.format(sample_index))
+            # temp_prop_array = sp_output_df.loc[sample_index].div(sp_output_df.loc[sample_index].sum(axis='index'))
+            temp_prop_array = sp_output_df.loc[sample_index].div(sp_output_df.loc[sample_index].sum())
+            for seq_name in temp_prop_array.keys():
+                sys.stdout.write('\rseq: {}'.format(seq_name))
+                val = temp_prop_array[seq_name]
+                if val != 0:  # if the sequences was found in the sample
+                    # If the sequence is already in the dict
+                    if seq_name in seq_rel_abund_calculator_dict.keys():
+                        # check to seee if the rel abundance is larger than the one already logged
+                        if val > seq_rel_abund_calculator_dict[seq_name][1]:
+                            seq_rel_abund_calculator_dict[seq_name] = (sample_index, val)
+                    # if we haven't logged for this sequence yet, then add this as the first log
+                    else:
+                        seq_rel_abund_calculator_dict[seq_name] = (sample_index, val)
+        pickle.dump(seq_rel_abund_calculator_dict, open('seq_rel_abund_calculator_dict_all_dates.pickle', 'wb'))
+
+    # here we have a dict that contains the largest rel_abundances per sample for each of the seqs
+    # now we can sort this to look at the top ? n sequences to start with (I'm not sure how the colouring will
+    # look like so lets just start with 30 and see where we get to)
+    sorted_list = sorted(seq_rel_abund_calculator_dict.items(), key=lambda x: x[1][1], reverse=True)
+    most_abund_seq_names = [tup[0] for tup in sorted_list]
+
+    # from the above sorted list we can then plot these sequences with colour and all others with grey scale
+    # lets make a coulour dictionary for the most common types
+    colour_list = get_colour_list()
+    colour_dict = {}
+    num_coloured_seqs = 30
+
+    # we will also need a grey palette for those sequences that are not the ones being annotated
+    grey_palette = ['#D0CFD4', '#89888D', '#4A4A4C', '#8A8C82', '#D4D5D0', '#53544F']
+
+    # make the dict
+    for i in range(len(most_abund_seq_names)):
+        if i < num_coloured_seqs:
+            colour_dict[most_abund_seq_names[i]] = colour_list[i]
+        else:
+            colour_dict[most_abund_seq_names[i]] = grey_palette[i % 6]
+
+    # add the 'low' key and assign it to grey for later on
+    # the low category will be created later on to hold the grouped abundances of sequences in samples
+    # below a certain rel abund cutoff
+    colour_dict['low'] = '#D0CFD4'
+
+    # for plotting we will also need to collect the 'rectangle' objects from the plotting process to use to make
+    # the legend which we will display on the plot right at the end
+    # this is going to be a little tricky to collect as not every sample type group that we are plotting
+    # is going to have all of the top n sequences. So, we will have to pick up rectangles when they come up in
+    # the plotting.
+    # to keep track of which sequences we need we have:
+    top_n_seqs_to_get = most_abund_seq_names[:num_coloured_seqs]
+    # to keep track of which sequences we have already collected we have:
+    top_n_seqs_done = []
+    # finally to collect the rectangles and store them in order despite collecting them out of order we have:
+    legend_rectangle_holder = [[] for i in range(num_coloured_seqs)]
+
+    # set up the plotting environment
+    # one plot for coral, mucus, seawater, sediment, turf_algae
+    f, axarr = plt.subplots(4, 5)
+    # counter to reference which set of axes we are plotting on
+    axarr_index = 0
+
+    # rather than work with the subplot standard layout we will use subplot2grid for our set up and have some hard
+    # coded axes
+    ax_list = [
+        # coral
+        (plt.subplot2grid((6, 5), (0, 0), colspan=3), 'coral', '22.08.2016'),
+        (plt.subplot2grid((6, 5), (0, 1), colspan=2), 'coral', '06.09.2016'),
+        # mucus
+        (plt.subplot2grid((6, 5), (1, 0), colspan=3), 'mucus', '22.08.2016'),
+        (plt.subplot2grid((6, 5), (1, 1), colspan=2), 'mucus', '06.09.2016'),
+        # sea water
+        (plt.subplot2grid((6, 5), (2, 0), colspan=1), 'sea_water', '22.08.2016'),
+        (plt.subplot2grid((6, 5), (2, 1), colspan=1), 'sea_water', '31.08.2016'),
+        (plt.subplot2grid((6, 5), (2, 2), colspan=1), 'sea_water', '01.09.2016'),
+        (plt.subplot2grid((6, 5), (2, 3), colspan=1), 'sea_water', '06.09.2016'),
+        (plt.subplot2grid((6, 5), (2, 4), colspan=1), 'sea_water', '02.10.2016'),
+        # sed_close
+        (plt.subplot2grid((6, 5), (3, 0), colspan=1), 'sed_close', '22.08.2016'),
+        (plt.subplot2grid((6, 5), (3, 1), colspan=1), 'sed_close', '31.08.2016'),
+        (plt.subplot2grid((6, 5), (3, 2), colspan=1), 'sed_close', '01.09.2016'),
+        (plt.subplot2grid((6, 5), (3, 3), colspan=1), 'sed_close', '06.09.2016'),
+        (plt.subplot2grid((6, 5), (3, 4), colspan=1), 'sed_close', '02.10.2016'),
+        # sed_far,
+        (plt.subplot2grid((6, 5), (4, 0), colspan=1), 'sed_far', '22.08.2016'),
+        (plt.subplot2grid((6, 5), (4, 1), colspan=1), 'sed_far', '31.08.2016'),
+        (plt.subplot2grid((6, 5), (4, 2), colspan=1), 'sed_far', '01.09.2016'),
+        (plt.subplot2grid((6, 5), (4, 3), colspan=1), 'sed_far', '06.09.2016'),
+        (plt.subplot2grid((6, 5), (4, 4), colspan=1), 'sed_far', '02.10.2016'),
+        # turf,
+        (plt.subplot2grid((6, 5), (5, 0), colspan=1), 'turf', '22.08.2016'),
+        (plt.subplot2grid((6, 5), (5, 1), colspan=1), 'turf', '31.08.2016'),
+        (plt.subplot2grid((6, 5), (5, 2), colspan=1), 'turf', '01.09.2016'),
+        (plt.subplot2grid((6, 5), (5, 3), colspan=1), 'turf', '06.09.2016'),
+        (plt.subplot2grid((6, 5), (5, 4), colspan=1), 'turf', '02.10.2016')
+    ]
+
+    # now we need to get the actual plotting information for each of the samples.
+    # we can do this sample type by sample type
+    # we will create a local dataframe that will be a sub set of the main sp output dataframe but will
+    # only contain the samples of the given sample type. It will also eventually only contain the sequence
+    # information for the sample type in question. Normally I would make a 2D list to hold the plotting
+    # information but in this case having all of the information in a dataframe is working really well and
+    # this is how I will do it in future.
+
+    # go environment type by environment type
+    # env_type_list = ['coral', 'mucus', 'sea_water', 'sed_close', 'sed_far', 'turf']
+    env_type_list = ['sea_water', 'sed_close', 'sed_far', 'turf']
+    for env_type in env_type_list:
+        # then go date by date
+        date_list = ['22.08.2016', '31.08.2016', '01.09.2016', '06.09.2016', '02.10.2016']
+        for date in date_list:
+
+            sys.stdout.write('\nGenerating plotting info for {} samples {}\n'.format(env_type, date))
+            # currently we have something like 4000 sequences to plot which is too may
+            # I think it will be much easier if we group the sequences that are found below a certain
+            # threshold. I think the best way to do this is to create a slice of the main df that
+            # contain the information for the samples of the env_type only
+
+            # get subset of the main dfs that contain only the env_type samples from the given date
+            env_info_df = info_df[(info_df['environ type'] == env_type) & (info_df['date collected'] == date)]
+
+            # we need to drop any samples that have only zeros in their columns
+            # https://stackoverflow.com/questions/22649693/drop-rows-with-all-zeros-in-pandas-data-frame
+            env_info_df = env_info_df[(env_info_df.T != 0).any()]
+
+            if len(env_info_df) < 1:
+                # then there are no samples for this date and type combo and we can move onto the next plot
+                axarr_index += 1
+                continue
+            env_sp_output_df = sp_output_df.loc[env_info_df.index.values.tolist()]
+
+            # we need to drop any samples that have only zeros in their columns
+            # https://stackoverflow.com/questions/22649693/drop-rows-with-all-zeros-in-pandas-data-frame
+            env_sp_output_df = env_sp_output_df[(env_sp_output_df.T != 0).any()]
+            if len(env_sp_output_df) < 1:
+                # then there are no samples for this date and type combo and we can move onto the next plot
+                axarr_index += 1
+                continue
+            # append a 'low' columns to the env_sp_ouput_df and populate with 0s
+            env_sp_output_df['low'] = 0
+            # now make a proportions version of the df, rather than absolute counts
+            env_sp_output_df_prop = env_sp_output_df[:].div(env_sp_output_df[:].sum(axis=1), axis=0)
+
+            # now as we work our way through we can sum up the low sequences into this column
+            # we can then check for 0 columns and drop these.
+
+            # get a list of the sequences found in the collection of samples of the given type and order
+            # them according to summed rel_abundance acorss all samples. This should be the order in which
+            # the samples are plotted
+            # at the same time we can get the info we need for plotting
+
+            summed_seq_rel_abund_across_smpls_dict = {seq: 0 for seq in list(sp_output_df)}
+
+            # we are also going to need to put the samples in an order that makes sense.
+            # Ideally I would like to take the time to do a proper travelling salesman analysis
+            # and I was thinking of putting in an ant colony system to do this but...
+            # I'm not sure we've got time for that. So let's do something a little more simple which
+            # should still be effective and look groovy
+            # Lets sort according to the majority sequence. I.e. lets put the samples into groups that
+            # are defined by what their majorty sequence is, then lets plot in order of those groups.
+            # within the groups we will plot in the order of the most abundant rel abund first.
+            # to get this information we will have a dict to collect it. The key of the dict will
+            # be the majority sequence with the value being a list that contains tuples. One tuple
+            # for each sample in the list which will contain the sample_name and the re abund of the maj seq
+
+            # Dict for holding the sample_sorting info
+            sample_sorting_info_dict = defaultdict(list)
+
+            for sp_index in env_sp_output_df_prop.index.values.tolist():
+                sys.stdout.write('\r{}'.format(sp_index))
+                # we need to get the name of the most abundant sequence and its rel abund for each sample
+                # for the sample_sorting_info_dict
+                most_abund_seq_name = env_sp_output_df_prop.loc[sp_index].idxmax(axis='index')
+                try:
+                    rel_abund_of_most_abund_seq = env_sp_output_df_prop.loc[sp_index, most_abund_seq_name]
+                except:
+                    apples = 'asdf'
+                sample_sorting_info_dict[most_abund_seq_name].append((sp_index, rel_abund_of_most_abund_seq))
+                # Put its seq rel abundances ino the summed_seq_rel_abund_across... dict
+
+                for non_zero_seq in env_sp_output_df_prop.loc[sp_index][env_sp_output_df_prop.loc[
+                                                                            sp_index] > 0].index:  # not including the final 'low' columns (this will be zero)
+                    val = env_sp_output_df_prop.loc[sp_index, non_zero_seq]
+                    # be sure to count the value of this cell and using it in judging which are the most
+                    # abundant sequences before we check whether to relegate it to the 'low' column
+                    summed_seq_rel_abund_across_smpls_dict[non_zero_seq] += val
+                    if val < 0.005:
+                        env_sp_output_df_prop.loc[sp_index, 'low'] += val
+                        env_sp_output_df_prop.loc[sp_index, non_zero_seq] = 0
+
+            # here we can get a sorted sample list using the sample_sorting_info_dict
+            sorted_sample_list = []
+            # we want to work through the sample_sorting_info_dict by the longest lists first
+            sorted_keys_for_sample_sort = \
+                [tup[0] for tup in sorted(sample_sorting_info_dict.items(), key=lambda x: len(x[1]), reverse=True)]
+            # for each of teh maj seq groups
+            for sorted_key in sorted_keys_for_sample_sort:
+                # now within each of these lists we want to order according to the rel_abundance of the sequences
+                sorted_list_of_samples_of_group = [tup[0] for tup in
+                                                   sorted(sample_sorting_info_dict[sorted_key], key=lambda x: x[1],
+                                                          reverse=True)]
+                sorted_sample_list.extend(sorted_list_of_samples_of_group)
+
+            # now we should re-order the df so that it is in the sample order of sorted_sample_list
+            env_sp_output_df_prop = env_sp_output_df_prop.reindex(sorted_sample_list)
+
+            # here we have a dict that contains the abundances of the seqs for the coral samples
+            # we will plot the coral samples' seqs in the order of the sequences in this dict
+            sorted_list_of_env_specific_seqs_tup \
+                = sorted(summed_seq_rel_abund_across_smpls_dict.items(), key=lambda x: x[1], reverse=True)
+            sorted_list_of_env_specific_seqs = [tup[0] for tup in sorted_list_of_env_specific_seqs_tup]
+
+            # Now we check for zero only columns and drop them
+            # we also need to remove these columns from the sorted
+            non_zero_cols = list(env_sp_output_df_prop.loc[:, (env_sp_output_df_prop != 0).any(axis=0)])
+            sorted_list_of_env_specific_seqs = [seq for seq in sorted_list_of_env_specific_seqs if
+                                                seq in non_zero_cols]
+
+            # add the 'low' column only if the 'low' column is a non-zero column, i.e. used
+            if 'low' in non_zero_cols:
+                sorted_list_of_env_specific_seqs.append('low')
+
+            # now drop the cols
+            env_sp_output_df_prop = env_sp_output_df_prop[non_zero_cols]
+
+            # we also have the plotting list which contains the info we will be plotting.
+
+            # the plotting_list is currently organised in a different order to that of the sorted_list_of_env...
+            # we need to change this order
+            env_sp_output_df_prop = env_sp_output_df_prop[sorted_list_of_env_specific_seqs]
+
+            # we now need to transpose this
+            env_sp_output_df_prop = env_sp_output_df_prop.transpose()
+
+            # here we finally have the plotting lists in the order of the sorted_list_of_env
+            bottom = [0 for smp in list(env_sp_output_df_prop)]
+            bar_list = []
+            # for each sample
+            plotting_indices = range(len(list(env_sp_output_df_prop)))
+
+            # for each sequence
+            list_of_seqs = env_sp_output_df_prop.index.values.tolist()
+            for i in range(len(list_of_seqs)):
+
+                sys.stdout.write('\r{}/{}'.format(i, len(list(env_sp_output_df_prop.iloc[:, 0]))))
+                bar_list.append(axarr[env_type_list.index(env_type)][date_list.index(date)].bar(plotting_indices,
+                                                                                                list(
+                                                                                                    env_sp_output_df_prop.iloc[
+                                                                                                        i]), 1,
+                                                                                                bottom,
+                                                                                                color=colour_dict[
+                                                                                                    sorted_list_of_env_specific_seqs[
+                                                                                                        i]]))
+                bottom = [L + M for L, M in zip(bottom, list(env_sp_output_df_prop.iloc[i]))]
+
+                # check to see if the seq we are plotting is still in the top_n_seqs list
+                # if it is in this list then we still need to grab a rectangle for plotting
+                # the legend. Once we have grabbed the rectangle then we should remove the seq from the top_n_seqs list
+                seq_name = list_of_seqs[i]
+
+                if seq_name in top_n_seqs_to_get and seq_name not in top_n_seqs_done:
+                    # then this is a seq that we still need to get a rectangle for the legend
+                    legend_rectangle_holder[top_n_seqs_to_get.index(seq_name)].append(bar_list[-1][0])
+                    top_n_seqs_done.append(seq_name)
+
+            # https://stackoverflow.com/questions/12998430/remove-xticks-in-a-matplotlib-plot
+            axarr[env_type_list.index(env_type)][date_list.index(date)].tick_params(axis='x', which='both',
+                                                                                    bottom=False, top=False,
+                                                                                    labelbottom=False)
+            # https://stackoverflow.com/questions/15858192/how-to-set-xlim-and-ylim-for-a-subplot-in-matplotlib
+            axarr[env_type_list.index(env_type)][date_list.index(date)].set_xlim(
+                (-0.5, (len(list(env_sp_output_df_prop)) - 0.5)))
+            # https://stackoverflow.com/questions/925024/how-can-i-remove-the-top-and-right-axis-in-matplotlib
+            axarr[env_type_list.index(env_type)][date_list.index(date)].spines['right'].set_visible(False)
+            axarr[env_type_list.index(env_type)][date_list.index(date)].spines['top'].set_visible(False)
+
+            # To make the legend for this mo fo is going to be a little tricky. The legend argument basically takes
+            # two lists. The first list should contain a rectangle object for each of the sequences (this
+            # will be the coloured box). We get this object from the bar objects that we are creating.
+            # The second list is a list of the labels. This should be easier. We can just use the
+            # most_abund_seq_names[:30] for these.
+            # to grab the rectangles, I think its best to pick them up during the plotting and hold them in a list
+            # outside of the subplot loop. We will need a holder for the objects to populate.
+
+            # https://matplotlib.org/api/_as_gen/matplotlib.axes.Axes.set_xticks.html#matplotlib.axes.Axes.set_xticks
+            axarr[env_type_list.index(env_type)][date_list.index(date)].set_yticks([1], minor=False)
+            # https://matplotlib.org/api/_as_gen/matplotlib.axes.Axes.set_xticklabels.html#matplotlib.axes.Axes.set_xticklabels
+            axarr[env_type_list.index(env_type)][date_list.index(date)].set_yticklabels(['1'])
+            axarr[env_type_list.index(env_type)][date_list.index(date)].set_xlabel('{}_{}'.format(env_type, date))
+
+            axarr_index += 1
+
+    # https://stackoverflow.com/questions/16150819/common-xlabel-ylabel-for-matplotlib-subplots/26892326
+    f.text(0, 0.5, 'ITS2 sequence relative abundance', va='center', rotation='vertical')
+    ordered_rectange_list = [sub_list[0] for sub_list in legend_rectangle_holder]
+    f.legend(ordered_rectange_list, top_n_seqs_to_get, loc='lower center')
+    plt.tight_layout()
+    f.savefig('diversity_bars.svg')
+    f.show()
 
 def create_quan_diversity_figs():
     ''' The purpose of these figs will be to compare the diversity found in the different sample types
@@ -729,14 +1603,9 @@ def make_venns():
         c.get_patch_by_id(element_list[i]).set_edgecolor('none')
         c.get_patch_by_id(element_list[i]).set_alpha(0.4)
 
-    figure.savefig('coral_combo_venn.svg')
+    figure.savefig('env_combo_venn.svg')
     figure.show()
     apples = 'adf'
-
-
-    # and maybe manually do the three venns using the sets
-    
-
 
 
 def get_colour_list():
@@ -773,4 +1642,4 @@ def get_colour_list():
     return colour_list
 
 
-create_quan_diversity_figs()
+create_diverstiy_figs_all_dates()
