@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 from collections import defaultdict
 import sys
 import statistics
+import itertools
+from matplotlib_venn import venn2, venn3
 
 
 def create_diverstiy_figs():
@@ -531,7 +533,7 @@ def create_quan_diversity_figs():
                 std = statistics.stdev(y_values)
                 mean = statistics.mean(y_values)
 
-                ax2.scatter(x=ind[ind_index] + 0.375, y=mean, marker='s', s=8, c='r')
+                ax2.scatter(x=ind[ind_index] + 0.375, y=mean, marker='o', s=8, c='r')
                 ax2.errorbar(x=ind[ind_index] + 0.375, y=mean, yerr=std, fmt='none', c='r')
 
                 if env_type == 'coral':
@@ -596,7 +598,7 @@ def create_quan_diversity_figs():
 
                     axarr[axarr_index].set_xticks([a + 0.1875 for a in range(6)], minor=False)
                     axarr[axarr_index].set_xticklabels(env_types_list)
-                    axarr[axarr_index].set_xlabel('pre-MED / post-MED')
+                    axarr[axarr_index].set_xlabel('Symbiodinium / post-MED')
                     axarr[axarr_index].set_ylim((0, 1.1))
 
                 # PLOT UNIQUE
@@ -612,7 +614,7 @@ def create_quan_diversity_figs():
                 std = statistics.stdev(y_values)
                 mean = statistics.mean(y_values)
 
-                ax2.scatter(x=ind[ind_index] + 0.375, y=mean, marker='s', s=8, c='r')
+                ax2.scatter(x=ind[ind_index] + 0.375, y=mean, marker='o', s=8, c='r')
                 ax2.errorbar(x=ind[ind_index] + 0.375, y=mean, yerr=std, fmt='none', c='r')
 
                 if env_type == 'coral':
@@ -620,11 +622,6 @@ def create_quan_diversity_figs():
                     ax2.tick_params('y', colors='r')
 
                 ind_index += 1
-
-
-
-
-
 
         axarr_index += 1
     apples = 'asdf'
@@ -655,17 +652,17 @@ def make_venns():
     sample_name_to_sample_type_dict = {}
     for info_index in info_df.index.values.tolist():
         if info_df.loc[info_index, 'environ type'] == 'coral':
-            sample_name_to_sample_type_dict[info_df.loc[info_index, 'sample_name']] = 'coral'
+            sample_name_to_sample_type_dict[info_index] = 'coral'
         elif info_df.loc[info_index, 'environ type'] == 'sea_water':
-            sample_name_to_sample_type_dict[info_df.loc[info_index, 'sample_name']] = 'sea_water'
+            sample_name_to_sample_type_dict[info_index] = 'sea_water'
         elif info_df.loc[info_index, 'environ type'] == 'sed_far':
-            sample_name_to_sample_type_dict[info_df.loc[info_index, 'sample_name']] = 'sed'
+            sample_name_to_sample_type_dict[info_index] = 'sed'
         elif info_df.loc[info_index, 'environ type'] == 'sed_close':
-            sample_name_to_sample_type_dict[info_df.loc[info_index, 'sample_name']] = 'sed'
+            sample_name_to_sample_type_dict[info_index] = 'sed'
         elif info_df.loc[info_index, 'environ type'] == 'mucus':
-            sample_name_to_sample_type_dict[info_df.loc[info_index, 'sample_name']] = 'mucus'
+            sample_name_to_sample_type_dict[info_index] = 'mucus'
         elif info_df.loc[info_index, 'environ type'] == 'turf':
-            sample_name_to_sample_type_dict[info_df.loc[info_index, 'sample_name']] = 'turf'
+            sample_name_to_sample_type_dict[info_index] = 'turf'
 
     # here we have the dict populated and we can now get to work pulling out the set of sequence
     # names found in each of the sample types
@@ -676,14 +673,66 @@ def make_venns():
     # now work through the sp output and check to see which columns are non-zero columns and add these column
     # labels into the respective sets
     for sp_output_index in sp_output_df.index.values.tolist():
-        type_of_sample  = sample_name_to_sample_type_dict[sp_output_df.loc[sp_output_index, 'sample_name']]
+        type_of_sample  = sample_name_to_sample_type_dict[sp_output_index]
         non_zero_seqs = list(sp_output_df.loc[sp_output_index][sp_output_df.loc[sp_output_index] > 0].index)
         set_list[sample_types.index(type_of_sample)].update(non_zero_seqs)
 
     # here we should have the sets populated
     # now create a dictionary that is the sample_type name to the set
+    sample_type_set_dict = {}
+    for smp_t in sample_types:
+        sample_type_set_dict[smp_t] = (smp_t, set_list[sample_types.index(smp_t)])
 
-    # then simply do permutations for the 4 x 3
+    colour_dict = {
+        'coral' : 'orange',
+        'sed' : 'brown',
+        'sea_water' : 'blue',
+        'turf' : 'green',
+        'mucus' : 'gray'}
+
+
+    figure, axes = plt.subplots(2, 2)
+    ax_count = 0
+    # then simply do permutations for the 5 x 3
+
+    coral_combo_plot_list = [('coral', 'mucus'), ('coral', 'sea_water'), ('coral', 'turf'), ('coral', 'sed')]
+    for combo in coral_combo_plot_list:
+        set_list = [sample_type_set_dict[combo[0]][1], sample_type_set_dict[combo[1]][1]]
+        labels = [sample_type_set_dict[combo[0]][0], sample_type_set_dict[combo[1]][0]]
+        c = venn2(subsets=set_list, set_labels=labels, ax=axes[int(ax_count / 2)][ax_count % 2])
+        element_list = ['10', '01']
+        for i in range(2):
+            # for each path we need to work out which colour we want it to be
+            # we can do this with a simple dict outside of here
+            c.get_patch_by_id(element_list[i]).set_color(colour_dict[labels[i]])
+            c.get_patch_by_id(element_list[i]).set_edgecolor('none')
+            c.get_patch_by_id(element_list[i]).set_alpha(0.4)
+        ax_count += 1
+
+
+
+    figure.savefig('coral_combo_venn.svg')
+    figure.show()
+    plt.close()
+
+    figure, axes = plt.subplots(1, 1)
+    # now lets plot the other vann of the three env_types against each other
+    set_list = [sample_type_set_dict['sea_water'][1], sample_type_set_dict['turf'][1], sample_type_set_dict['sed'][1]]
+    labels = [sample_type_set_dict['sea_water'][0], sample_type_set_dict['turf'][0], sample_type_set_dict['sed'][0]]
+
+    c = venn3(subsets=set_list, set_labels=labels, ax=axes)
+    element_list = ['100', '010', '001']
+    for i in range(3):
+        # for each path we need to work out which colour we want it to be
+        # we can do this with a simple dict outside of here
+        c.get_patch_by_id(element_list[i]).set_color(colour_dict[labels[i]])
+        c.get_patch_by_id(element_list[i]).set_edgecolor('none')
+        c.get_patch_by_id(element_list[i]).set_alpha(0.4)
+
+    figure.savefig('coral_combo_venn.svg')
+    figure.show()
+    apples = 'adf'
+
 
     # and maybe manually do the three venns using the sets
     
@@ -723,60 +772,5 @@ def get_colour_list():
                   "#545C46", "#866097", "#365D25", "#252F99", "#00CCFF", "#674E60", "#FC009C", "#92896B"]
     return colour_list
 
-def get_db_named_coral_to_mucus_dict(coral_info_name_to_muc_info_name_dict, data_set_samples, sample):
-    coral_name_to_muc_name_dict = {}
-    for k, v in coral_info_name_to_muc_info_name_dict.items():
-        coral_count = 0
-        coral_name_match = str()
-        mucus_count = 0
-        mucus_name_match = str()
-        for sample in data_set_samples:
-            # look up in the info table what the sample type is and append it to a dict
-            if sample.name.replace('-', '_') in k or k in sample.name.replace('-', '_'):
-                # Then we have a match for the info name and the actual sample name for the coral
-                coral_count += 1
-                coral_name_match = sample.name
-            if sample.name.replace('-', '_') in v or v in sample.name.replace('-', '_'):
-                # Then we have a match for the info name and the actual sample name for the mucus
-                mucus_count += 1
-                mucus_name_match = sample.name
 
-        if coral_count == 1 and mucus_count == 1:
-            # then we only found one match and we are good to continue.
-            # get the sample_type for this sample and add this to the sample_name_to_sample_type_dict
-            coral_name_to_muc_name_dict[coral_name_match] = mucus_name_match
-        else:
-            sys.exit('Count != 1 {}'.format(sample.name))
-    return coral_name_to_muc_name_dict
-
-def get_coral_to_mucus_dict():
-    coral_to_mucus_info_df = pd.read_csv('/home/humebc/projects/env_res/seq_info_coral_mucus_link.csv', sep=',',
-                                         lineterminator='\n')
-    coral_info_name_to_muc_info_name_dict = {}
-    for i in range(1, 69):
-        mucus_found = False
-        coral_found = False
-        coral_sample_name = ''
-        mucus_sample_name = ''
-        for j, df_name in enumerate(coral_to_mucus_info_df['Sample no.']):
-
-            if df_name.strip() == 'coral {}'.format(i):
-                # then this is the coral sample we are intersted in
-                coral_sample_name = coral_to_mucus_info_df['Sample Name'][j]
-                coral_found = True
-            if df_name.strip() == 'mucus {}'.format(i):
-                # then this is the paired mucus sample
-                mucus_sample_name = coral_to_mucus_info_df['Sample Name'][j]
-                mucus_found = True
-
-        if coral_found and mucus_found:
-            # Then we can add this to the dict
-            coral_info_name_to_muc_info_name_dict[coral_sample_name] = mucus_sample_name
-        else:
-            # then we just wont work with this pair.
-            print('{} not found'.format(i))
-            continue
-
-    return coral_info_name_to_muc_info_name_dict
-
-make_venns()
+create_quan_diversity_figs()
