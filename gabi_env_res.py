@@ -8,6 +8,8 @@ import sys
 import statistics
 import itertools
 from matplotlib_venn import venn2, venn3, venn2_circles, venn3_circles
+import numpy as np
+from multiprocessing import Queue, Process, Manager
 
 
 def create_diverstiy_figs():
@@ -1539,9 +1541,14 @@ def create_quan_diversity_figs_all_dates():
      In terms of collecting the data we should simply use the cleaned up dataframes that we created when making the
      diversity plots.'''
 
-    sp_output_df = pickle.load(open('sp_output_df.pickle', 'rb'))
-    QC_info_df = pickle.load(open('QC_info_df.pickle', 'rb'))
-    info_df = pickle.load(open('info_df.pickle', 'rb'))
+    sp_output_df = pickle.load(open('sp_output_df_all_dates.pickle', 'rb'))
+    QC_info_df = pickle.load(open('QC_info_df_all_dates.pickle', 'rb'))
+    info_df = pickle.load(open('info_df_all_dates.pickle', 'rb'))
+
+    # remove sample P7-G07 as it has no Symbiodinium samples
+    sp_output_df.drop('P7_G07', axis='index', inplace=True)
+    QC_info_df.drop('P7_G07', axis='index', inplace=True)
+    info_df.drop('P7_G07', axis='index', inplace=True)
 
     # lets make 5 subplot
     # according to the above categories
@@ -1550,18 +1557,13 @@ def create_quan_diversity_figs_all_dates():
     # counter to reference which set of axes we are plotting on
     axarr_index = 0
     # y_axis_labels = ['raw_contigs', 'post_qc', 'Symbiodinium', 'non-Symbiodinium', 'post-MED', 'post-MED / pre-MED']
-    y_axis_labels = ['raw_contigs',  'non-Symbiodinium','Symbiodinium',  'post-MED', 'post-MED / pre-MED']
+    y_axis_labels = ['raw_contigs',  'non-Symbiodinium','Symbiodinium',  'post-MED', 'post-MED / Symbiodinium']
 
 
     # cycle through these strings to help us with our conditionals
     # one of these for each of the subplots that we will create
     # we will make these useful tuples that will hold the actual name of the columns that the data we want will
     # be in so that we can pull these out of the dataframe easily
-    # for sub_plot_type in [('raw_contigs',), ('post_qc_absolute_seqs', 'post_qc_unique_seqs'),
-    #                       ('post_taxa_id_absolute_symbiodinium_seqs', 'post_taxa_id_unique_symbiodinium_seqs'),
-    #                       ('post_taxa_id_absolute_non_symbiodinium_seqs','post_taxa_id_unique_non_symbiodinium_seqs'),
-    #                       ('post_med_absolute','post_med_unique'),
-    #                       ('med_ratio', True) ]:
     for sub_plot_type in [('raw_contigs',),
                           ('post_taxa_id_absolute_non_symbiodinium_seqs', 'post_taxa_id_unique_non_symbiodinium_seqs'),
                           ('post_taxa_id_absolute_symbiodinium_seqs', 'post_taxa_id_unique_symbiodinium_seqs'),
@@ -1772,7 +1774,7 @@ def create_quan_diversity_figs_all_dates():
 
 
     plt.tight_layout()
-    f.savefig('diversity_stats.svg')
+    f.savefig('diversity_stats_all_dates.svg')
     f.show()
     return
 
@@ -2264,7 +2266,6 @@ def generate_elements_text_list(dict_list):
                 label_list_info[6][2] / dict_three_sum)))
         return label_list_name
 
-
 def get_colour_list():
     colour_list = ["#FFFF00", "#1CE6FF", "#FF34FF", "#FF4A46", "#008941", "#006FA6", "#A30059", "#FFDBE5",
                   "#7A4900", "#0000A6", "#63FFAC", "#B79762", "#004D43", "#8FB0FF", "#997D87", "#5A0007", "#809693",
@@ -2317,4 +2318,193 @@ def test():
                  arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0.5', color='gray'))
     plt.show()
 
-create_quan_diversity_figs_all_dates()
+def rarefaction_curves():
+    ''' The purpose of this will be to create a figure that has a rarefaction curve for each of the sample types.
+    I'm hoping that this will do an excellent job of mitigating the problem we currently have with regards to the
+    differences in sequences returned from the different environemtns.
+    We can look up a paper that supports the fact that relatively accurate inference can be made
+    using the begining part of the curve.
+
+    To draw the rarefaction curve we will work on a sample by sample basis. For each sample, we will create a list
+    that contains the resundant seuqnces according to aboslute counts (massive list) and then simply do random
+    selects on this without replacement to get an array of sequences in the pick order. We can then iterate through
+    this picked order and put the seqs into a set. We can then get the len of the set at given intervlas. the intercal
+    vs. the set len will be our coordinates for the plotting. However, we will bootstrap this so we will do the above
+    process per sample maybe 100 times. then for each of the intervals we can get an average. Then for all of the
+    sampes of a given sample type we can average all of the diversity points at each interval and plot this point
+    (maybe we also plot the individual points too). Obviously we will lose points as we work along our intervals.
+    This is fine (and an inherent part of the data which we are precielcy trying to overcome with this rarefaction
+    approach) but we should make the reader aware of this decrease by having an n on the graph. Also error bars would
+    be nice. This may mean that we need to have different subplots for each of the curves though.
+    '''
+
+    # read in the dataframes
+    sp_output_df = pickle.load(open('sp_output_df_all_dates.pickle', 'rb'))
+    QC_info_df = pickle.load(open('QC_info_df_all_dates.pickle', 'rb'))
+    info_df = pickle.load(open('info_df_all_dates.pickle', 'rb'))
+
+    # remove sample P7-G07 as it has no Symbiodinium samples
+    sp_output_df.drop('P7_G07', axis='index', inplace=True)
+    QC_info_df.drop('P7_G07', axis='index', inplace=True)
+    info_df.drop('P7_G07', axis='index', inplace=True)
+    # remove samples that don't have any counts in the MED QC columns
+    keeper_row_labels = QC_info_df.index[QC_info_df['post_med_absolute'] != 0]
+    QC_info_df = QC_info_df.loc[keeper_row_labels]
+    sp_output_df = sp_output_df.loc[keeper_row_labels]
+    info_df = info_df.loc[keeper_row_labels]
+    apples = 'asdf'
+
+    # create a dictionary that is sample name to env_type
+    sample_name_to_sample_type_dict = {}
+    for info_index in info_df.index.values.tolist():
+        if info_df.loc[info_index, 'environ type'] == 'coral':
+            sample_name_to_sample_type_dict[info_index] = 'coral'
+        elif info_df.loc[info_index, 'environ type'] == 'sea_water':
+            sample_name_to_sample_type_dict[info_index] = 'sea_water'
+        elif info_df.loc[info_index, 'environ type'] == 'sed_far':
+            sample_name_to_sample_type_dict[info_index] = 'sed'
+        elif info_df.loc[info_index, 'environ type'] == 'sed_close':
+            sample_name_to_sample_type_dict[info_index] = 'sed'
+        elif info_df.loc[info_index, 'environ type'] == 'mucus':
+            sample_name_to_sample_type_dict[info_index] = 'mucus'
+        elif info_df.loc[info_index, 'environ type'] == 'turf':
+            sample_name_to_sample_type_dict[info_index] = 'turf'
+
+
+    boot_iterations = 2
+    if os.path.isfile('result_dict_rare_{}.pickle'.format(boot_iterations)):
+        result_dict = pickle.load(open('result_dict_rare_{}.pickle'.format(boot_iterations), 'rb'))
+    else:
+
+        # get a list of the sampling frequencies that we want to sample over
+        sampling_frequencies = []
+        additions_list = [0, 0.25, 0.5, 0.75]
+        orders = range(1, 6)
+        for order in orders:
+            for addition in additions_list:
+                sampling_frequencies.append(int(10 ** (order + addition)))
+
+        # we will send one series to be bootstrapped to a core for MPing
+        input_series_queue = Queue()
+
+        num_proc = 35
+
+        manager = Manager()
+        result_dict = manager.dict()
+
+        for smp_index in sp_output_df.index.values.tolist():
+            sys.stdout.write('\rPrinting: {}'.format(smp_index))
+            non_zero_indices = list(sp_output_df.loc[smp_index].nonzero()[0])
+            non_zero_series = sp_output_df.loc[smp_index].iloc[non_zero_indices]
+
+            with open('test_bob.txt', 'w') as f:
+                for item in non_zero_series.index.values:
+                    f.write('{}\n'.format(item))
+            new_list = []
+            with open('test_bob.txt', 'r') as f:
+                new_list.extend([line.rstrip() for line in f])
+            new_dict = {a:b for a, b, in zip(new_list, non_zero_series.values.tolist())}
+
+            input_series_queue.put((smp_index, new_dict))
+
+        for i in range(num_proc):
+            input_series_queue.put('STOP')
+
+        list_of_processes = []
+        for N in range(num_proc):
+            # p = Process(target=rarefaction_curve_worker, args=(input_series_queue, boot_iterations,
+            #                                                    result_dict, sampling_frequencies))
+            p = Process(target=rarefaction_curve_worker, args=(input_series_queue, boot_iterations,
+                                                                result_dict, sampling_frequencies))
+            list_of_processes.append(p)
+            p.start()
+
+        for p in list_of_processes:
+            p.join()
+
+        pickle.dump(result_dict, open('result_dict_rare_{}.pickle'.format(boot_iterations), 'wb'))
+
+    # # we have our results that we can work with held in the result_dict
+    # # we should be able to work directly with this dictionary for plotting so lets set this up now
+    #
+    # fig, axarr = plt.subplot(5, 1)
+    # axx_ind = 0
+    # env_type_list = ['coral', 'mucus', 'sea_water', 'sed_close', 'sed_far', 'turf']
+    # # this will be a master structure that holds all of the info that we will need to eventually
+    # # create a Dataframe per sample type. it will be a list of tuples.
+    # # within each tuple will be [0] = ordered list of sample name
+    # # [1] a list of lists each list being the diversity counts in the order of sampling frequencies
+    # # we will need to remember to add a nan or something when there aren't counts for all of the xs
+    #
+    # data_info = [([],[]) for env_type in env_type_list]
+    # # for each sample workout the means of the bottstraps and put these into a single list that will eventually
+    # # become the data points on the plot
+    # for smp in result_dict.keys():
+    #     env_type_of_smp = sample_name_to_sample_type_dict[smp]
+    #     temp_df = pd.DataFrame(result_dict[smp])
+    #     averaged_series = temp_df.mean(axis=1)
+    #     data_info[env_type_list.index(env_type_of_smp)][0].append(smp)
+    #     data_info[env_type_list.index(env_type_of_smp)][1].append(averaged_series.tolist())
+    #
+    # # here we should have all of the info we need to make a dataframe that can directly be used for plotting for
+    # # each of the environmental sample types
+    #
+    # for env_type in env_type_list:
+    #     env_type_df = pd.DataFrame(data_info[env_type_list.index[env_type]][1], index=data_info[env_type_list.index[env_type]][0], columns = sampling_frequencies)
+    #     for col in list(env_type_df):
+    #         # here plot the individual points (one pont for each of the samples of the env_type that have a point for
+    #         # this sampling frequency
+    #         non_zero_indices = env_type_df[col].nonzero()
+    #         non_zero_series = env_type_df[col].iloc[non_zero_indices]
+    #         axarr[axx_ind].scatter([col for i in len(non_zero_series)], non_zero_series)
+    #
+    #         # now plot the average point
+    #
+    #         # now plot the error bars
+    #
+    #         # now print the number of points above the top of the top error bar
+    #
+    #
+    #
+    #
+    # apples = 'asdf'
+
+
+
+def rarefaction_curve_worker(input_queue, num_bootstraps, result_dict, sampling_frequencies):
+
+    for name, working_dict in iter(input_queue.get, 'STOP'):
+
+        sys.stdout.write('\n\nSample: {}'.format(name))
+        # for each sample, perform the bootstrapping
+
+        # the enormous list that will hold a non-redundant list of sequences for picking from
+        picking_list = []
+        for non_zero_col_labl in working_dict.keys():
+            picking_list.extend([non_zero_col_labl for i in range(working_dict[non_zero_col_labl])])
+
+        # this will hold the lists which will hold the results of a single bool
+        # so this will hold the results of all of the bools
+        sample_boot_result_holder = []
+        for it_num in range(num_bootstraps):
+            sys.stdout.write('\nbootstrap: {}\n'.format(it_num))
+            # this is the set that we will populate to count number of unique seqs
+            sample_result_holder = []
+            temp_set = set()
+            try:
+                pick_array = np.random.choice(picking_list, len(picking_list), replace=False)
+            except:
+                asdf = 'asdf'
+            for i in range(len(pick_array)):
+                sys.stdout.write('\rbootstrap: {}'.format(i))
+                temp_set.add(pick_array[i])
+                if i in sampling_frequencies:
+                    # then we sample the length of the set
+                    sample_result_holder.append(len(temp_set))
+            sample_boot_result_holder.append(sample_result_holder)
+
+        # here we have conducted the bootstrapping for one of the samples
+        result_dict[name] = sample_boot_result_holder
+
+
+rarefaction_curves()
