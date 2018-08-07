@@ -2371,7 +2371,7 @@ def rarefaction_curves():
             sample_name_to_sample_type_dict[info_index] = 'turf'
 
 
-    boot_iterations = 2
+    boot_iterations = 100
     if os.path.isfile('result_dict_rare_{}.pickle'.format(boot_iterations)):
         result_dict = pickle.load(open('result_dict_rare_{}.pickle'.format(boot_iterations), 'rb'))
     else:
@@ -2387,7 +2387,7 @@ def rarefaction_curves():
         # we will send one series to be bootstrapped to a core for MPing
         input_series_queue = Queue()
 
-        num_proc = 35
+        num_proc = 26
 
         manager = Manager()
         result_dict = manager.dict()
@@ -2422,7 +2422,7 @@ def rarefaction_curves():
         for p in list_of_processes:
             p.join()
 
-        pickle.dump(result_dict, open('result_dict_rare_{}.pickle'.format(boot_iterations), 'wb'))
+        pickle.dump(dict(result_dict), open('result_dict_rare_{}.pickle'.format(boot_iterations), 'wb'))
 
     # # we have our results that we can work with held in the result_dict
     # # we should be able to work directly with this dictionary for plotting so lets set this up now
