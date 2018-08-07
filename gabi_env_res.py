@@ -2422,7 +2422,7 @@ def rarefaction_curves():
         for p in list_of_processes:
             p.join()
 
-        pickle.dump(result_dict, open('result_dict_rare_{}.pickle'.format(boot_iterations), 'wb'))
+        pickle.dump(dict(result_dict), open('result_dict_rare_{}.pickle'.format(boot_iterations), 'wb'))
 
     # # we have our results that we can work with held in the result_dict
     # # we should be able to work directly with this dictionary for plotting so lets set this up now
