@@ -3216,9 +3216,6 @@ def rarefaction_curves():
     plt.savefig('rarefaction_one_third_cutoff.png')
     apples = 'asdf'
 
-
-
-
 def rarefaction_curve_worker(input_queue, num_bootstraps, result_dict, sampling_frequencies):
 
     for name, working_dict in iter(input_queue.get, 'STOP'):
@@ -3253,7 +3250,6 @@ def rarefaction_curve_worker(input_queue, num_bootstraps, result_dict, sampling_
 
         # here we have conducted the bootstrapping for one of the samples
         result_dict[name] = sample_boot_result_holder
-
 
 
 create_diverstiy_figs_all_dates_grouped_dates_sed_grouped()
