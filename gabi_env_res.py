@@ -2267,7 +2267,8 @@ def create_quan_diversity_figs_all_dates_sed_collapsed():
         ind_index = 0
 
 
-        if sub_plot_type[0] != 'raw_contigs': ax2 = axarr[axarr_index].twinx()
+        if sub_plot_type[0] != 'raw_contigs':
+            ax2 = axarr[axarr_index].twinx()
 
         axarr[axarr_index].set_xlabel(y_axis_labels[axarr_index])
 
