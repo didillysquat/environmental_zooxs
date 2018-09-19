@@ -2931,7 +2931,7 @@ def generate_elements_text_list(dict_list):
             '{:.2f}:{:.2f}:{:.2f}'.format(0, label_list_info[2][1] / dict_two_sum, 0)))
         # 011
         label_list_name.append((
-            len(union_list[1]),
+            len(union_list[3]),
             '{:.2f}:{:.2f}:{:.2f}'.format(
                 0,
                 label_list_info[3][1] / dict_two_sum,
@@ -2939,11 +2939,11 @@ def generate_elements_text_list(dict_list):
         ))
         # 001
         label_list_name.append((
-            len(union_list[2]),
+            len(union_list[4]),
             '{:.2f}:{:.2f}:{:.2f}'.format(0, 0, label_list_info[4][2] / dict_three_sum)))
         # 101
         label_list_name.append((
-            len(union_list[1]),
+            len(union_list[5]),
             '{:.2f}:{:.2f}:{:.2f}'.format(
                 label_list_info[5][0] / dict_one_sum,
                 0,
@@ -2951,7 +2951,7 @@ def generate_elements_text_list(dict_list):
         ))
         # 111
         label_list_name.append((
-            len(union_list[2]),
+            len(union_list[6]),
             '{:.2f}:{:.2f}:{:.2f}'.format(
                 label_list_info[6][0] / dict_one_sum,
                 label_list_info[6][1] / dict_two_sum,
@@ -3253,4 +3253,4 @@ def rarefaction_curve_worker(input_queue, num_bootstraps, result_dict, sampling_
         result_dict[name] = sample_boot_result_holder
 
 
-create_diverstiy_figs_all_dates_grouped_dates_sed_grouped()
+make_venns_all_dates_rel_props_annotated()
