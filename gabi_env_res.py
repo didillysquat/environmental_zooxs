@@ -2467,212 +2467,517 @@ def create_quan_diversity_figs_all_dates_sed_collapsed():
     f.show()
     return
 
-def make_venns():
-    ''' Here we will aim to make venn diagrams we will make a set of three 2 cirle venns which will
-    just show the comparison of the env_samples to the coral.
-    We will also make a set of four 3 circle venn diagrams which will show all 3 way combinations.
-    There is a neat little module called matplotlib_venn which we can use to do this and it is dead simple.
-    All you need to do is pass it a list of sets.'''
+def create_quan_diversity_figs_pre_MED_seqs():
+    ''' This is a modification of the above so that all of the dates are considered.
+    The purpose of these figs will be to compare the diversity found in the different sample types
+    I envisage them being a sub plot each step of the QC:
+     1 - Post QC
+     2 - Symbiodinium
+     3 - non-Symbiodinium
+     4 - post - MED
+     5 - pst MED to pre MED symbiodinium ratio
+     number 5 will be important to consider and will hopefully hopefully be similar between all of the sample
+     types. It is important because MED has the possibility to collapse diverstiy in a non-linear manner.
+     e.g. in a sample with 1000 sequences, that has roughly the same spread as a sample with only 100 sequences
+     it is possible that MED will collapse both of these samples into 10 meaningful sequences. However, we would
+     then need to make sure to compare the different samples according to their pre-MED diversity. Although, we can
+     also discuss when the post-MED diversity means.
+     For each of teh sup plots I envisage there being a a 'set of plots' for each of the sample types
+     For each of these sets would in trun contain a set of two plots. One for absolute and one for unique. Each one
+     of these plots would be the actual datapoints on the left, and then a mean point with SD bars to the right of it
+     . We can put the absoulte and unique values on different axes as the differences between these will be huge.
+     We can achieve this by setting up subplot axes and then using the .errorbar and .scatter functions.
+     In terms of collecting the data we should simply use the cleaned up dataframes that we created when making the
+     diversity plots.'''
 
-    # read in the dataframes created previously
-    sp_output_df = pickle.load(open('sp_output_df.pickle', 'rb'))
-    QC_info_df = pickle.load(open('QC_info_df.pickle', 'rb'))
-    info_df = pickle.load(open('info_df.pickle', 'rb'))
-
-    # create a dictionary that is sample name to env_type
-    sample_name_to_sample_type_dict = {}
-    for info_index in info_df.index.values.tolist():
-        if info_df.loc[info_index, 'environ type'] == 'coral':
-            sample_name_to_sample_type_dict[info_index] = 'coral'
-        elif info_df.loc[info_index, 'environ type'] == 'sea_water':
-            sample_name_to_sample_type_dict[info_index] = 'sea_water'
-        elif info_df.loc[info_index, 'environ type'] == 'sed_far':
-            sample_name_to_sample_type_dict[info_index] = 'sed'
-        elif info_df.loc[info_index, 'environ type'] == 'sed_close':
-            sample_name_to_sample_type_dict[info_index] = 'sed'
-        elif info_df.loc[info_index, 'environ type'] == 'mucus':
-            sample_name_to_sample_type_dict[info_index] = 'mucus'
-        elif info_df.loc[info_index, 'environ type'] == 'turf':
-            sample_name_to_sample_type_dict[info_index] = 'turf'
-
-    # here we have the dict populated and we can now get to work pulling out the set of sequence
-    # names found in each of the sample types
-    sample_types = ['coral', 'sea_water', 'sed', 'mucus', 'turf']
-
-    set_list = [set() for type in sample_types]
-
-    # now work through the sp output and check to see which columns are non-zero columns and add these column
-    # labels into the respective sets
-    for sp_output_index in sp_output_df.index.values.tolist():
-        type_of_sample  = sample_name_to_sample_type_dict[sp_output_index]
-        non_zero_seqs = list(sp_output_df.loc[sp_output_index][sp_output_df.loc[sp_output_index] > 0].index)
-        set_list[sample_types.index(type_of_sample)].update(non_zero_seqs)
-
-    # here we should have the sets populated
-    # now create a dictionary that is the sample_type name to the set
-    sample_type_set_dict = {}
-    for smp_t in sample_types:
-        sample_type_set_dict[smp_t] = (smp_t, set_list[sample_types.index(smp_t)])
-
-    colour_dict = {
-        'coral' : 'orange',
-        'sed' : 'brown',
-        'sea_water' : 'blue',
-        'turf' : 'green',
-        'mucus' : 'gray'}
-
-
-    figure, axes = plt.subplots(2, 2)
-    ax_count = 0
-    # then simply do permutations for the 5 x 3
-
-    coral_combo_plot_list = [('coral', 'mucus'), ('coral', 'sea_water'), ('coral', 'turf'), ('coral', 'sed')]
-    for combo in coral_combo_plot_list:
-        set_list = [sample_type_set_dict[combo[0]][1], sample_type_set_dict[combo[1]][1]]
-        labels = [sample_type_set_dict[combo[0]][0], sample_type_set_dict[combo[1]][0]]
-        c = venn2(subsets=set_list, set_labels=labels, ax=axes[int(ax_count / 2)][ax_count % 2])
-        element_list = ['10', '01']
-        for i in range(2):
-            # for each path we need to work out which colour we want it to be
-            # we can do this with a simple dict outside of here
-            c.get_patch_by_id(element_list[i]).set_color(colour_dict[labels[i]])
-            c.get_patch_by_id(element_list[i]).set_edgecolor('none')
-            c.get_patch_by_id(element_list[i]).set_alpha(0.4)
-        ax_count += 1
-
-
-
-    figure.savefig('coral_combo_venn.svg')
-    figure.show()
-    plt.close()
-
-    figure, axes = plt.subplots(1, 1)
-    # now lets plot the other vann of the three env_types against each other
-    set_list = [sample_type_set_dict['sea_water'][1], sample_type_set_dict['turf'][1], sample_type_set_dict['sed'][1]]
-    labels = [sample_type_set_dict['sea_water'][0], sample_type_set_dict['turf'][0], sample_type_set_dict['sed'][0]]
-
-    c = venn3(subsets=set_list, set_labels=labels, ax=axes)
-    element_list = ['100', '010', '001']
-    for i in range(3):
-        # for each path we need to work out which colour we want it to be
-        # we can do this with a simple dict outside of here
-        c.get_patch_by_id(element_list[i]).set_color(colour_dict[labels[i]])
-        c.get_patch_by_id(element_list[i]).set_edgecolor('none')
-        c.get_patch_by_id(element_list[i]).set_alpha(0.4)
-
-    figure.savefig('env_combo_venn.svg')
-    figure.show()
-    apples = 'adf'
-
-def make_venns_all_dates():
-    ''' This is a modification of the above the only difference being that we are working with all samples
-    of all times. It would be nice to somehow represent what proportion of the total sequences are represented
-    by the unique samples but I don't actually think this is possible. Instead we will create labels that
-    show what proportion of the total sequences the unique sequences represent.
-    Here we will aim to make venn diagrams we will make a set of three 2 cirle venns which will
-    just show the comparison of the env_samples to the coral.
-    We will also make a set of four 3 circle venn diagrams which will show all 3 way combinations.
-    There is a neat little module called matplotlib_venn which we can use to do this and it is dead simple.
-    All you need to do is pass it a list of sets.'''
-
-    # read in the dataframes created previously
     sp_output_df = pickle.load(open('sp_output_df_all_dates.pickle', 'rb'))
     QC_info_df = pickle.load(open('QC_info_df_all_dates.pickle', 'rb'))
     info_df = pickle.load(open('info_df_all_dates.pickle', 'rb'))
 
+    # remove sample P7-G07 as it has no Symbiodinium samples
+    sp_output_df.drop('P7_G07', axis='index', inplace=True)
+    QC_info_df.drop('P7_G07', axis='index', inplace=True)
+    info_df.drop('P7_G07', axis='index', inplace=True)
 
-    # in order to be able to calculate the proportion of a sample types sequencs that the various sequence regions
-    # represent in proportion to the total sequences we need to work with a prportion df
-    sp_output_df = sp_output_df[:].div(sp_output_df[:].sum(axis=1), axis=0)
+    # lets make 5 subplot
+    # according to the above categories
 
-    # create a dictionary that is sample name to env_type
-    sample_name_to_sample_type_dict = {}
-    for info_index in info_df.index.values.tolist():
-        if info_df.loc[info_index, 'environ type'] == 'coral':
-            sample_name_to_sample_type_dict[info_index] = 'coral'
-        elif info_df.loc[info_index, 'environ type'] == 'sea_water':
-            sample_name_to_sample_type_dict[info_index] = 'sea_water'
-        elif info_df.loc[info_index, 'environ type'] == 'sed_far':
-            sample_name_to_sample_type_dict[info_index] = 'sed'
-        elif info_df.loc[info_index, 'environ type'] == 'sed_close':
-            sample_name_to_sample_type_dict[info_index] = 'sed'
-        elif info_df.loc[info_index, 'environ type'] == 'mucus':
-            sample_name_to_sample_type_dict[info_index] = 'mucus'
-        elif info_df.loc[info_index, 'environ type'] == 'turf':
-            sample_name_to_sample_type_dict[info_index] = 'turf'
+    f, axarr = plt.subplots(3, 1, figsize=(6,4))
 
-    # here we have the dict populated and we can now get to work pulling out the set of sequence
-    # names found in each of the sample types
-    sample_types = ['coral', 'sea_water', 'sed', 'mucus', 'turf']
+    # # make the y axes logarithmic
+    # for ax in axarr:
+    #     ax.set_yscale('log')
 
 
-    set_list = [set() for type in sample_types]
+    # counter to reference which set of axes we are plotting on
+    axarr_index = 0
+    # y_axis_labels = ['raw_contigs', 'post_qc', 'Symbiodinium', 'non-Symbiodinium', 'post-MED', 'post-MED / pre-MED']
+    y_axis_labels = ['raw_contigs',  'non-Symbiodiniaceae','Symbiodiniaceae',  'post-MED', 'post-MED / Symbiodinium']
 
-    # now work through the sp output and check to see which columns are non-zero columns and add these column
-    # labels into the respective sets
-    # here we will create a list of dictionaries, one per sample type and this will be
-    # key = sequence, value = cumulative rel_props
-    for sp_output_index in sp_output_df.index.values.tolist():
-        type_of_sample = sample_name_to_sample_type_dict[sp_output_index]
-        non_zero_seqs = list(sp_output_df.loc[sp_output_index][sp_output_df.loc[sp_output_index] > 0].index)
-        set_list[sample_types.index(type_of_sample)].update(non_zero_seqs)
 
-    # here we should have the sets populated
-    # now create a dictionary that is the sample_type name to the set
-    sample_type_set_dict = {}
-    for smp_t in sample_types:
-        sample_type_set_dict[smp_t] = (smp_t, set_list[sample_types.index(smp_t)])
+    # cycle through these strings to help us with our conditionals
+    # one of these for each of the subplots that we will create
+    # we will make these useful tuples that will hold the actual name of the columns that the data we want will
+    # be in so that we can pull these out of the dataframe easily
+    for sub_plot_type in [('raw_contigs',),
+                          ('post_taxa_id_absolute_non_symbiodinium_seqs', 'post_taxa_id_unique_non_symbiodinium_seqs'),
+                          ('post_taxa_id_absolute_symbiodinium_seqs', 'post_taxa_id_unique_symbiodinium_seqs')]:
 
-    colour_dict = {
-        'coral': 'orange',
-        'sed': 'brown',
-        'sea_water': 'blue',
-        'turf': 'green',
-        'mucus': 'gray'}
+        # The grids were confusing when there were two axes
+        # axarr[axarr_index].grid(b=True, which='major', axis='y')
+        # for each of the sub plots we will want to grab the absolute and unique counts and plot these
+        # for each of the sample types.
+        # go environment type by environment type
 
-    figure, axes = plt.subplots(2, 2)
-    ax_count = 0
-    # then simply do permutations for the 5 x 3
+        # we will create some x axis indicies to arranage where we will be ploting
+        # we can be smart with these later on and create some nice spacing layouts but for the time
+        # being lets just get things plotted. Let's have one idices for each sample type and work
+        # relatively from there.
+        ind = range(5)
+        ind_index = 0
 
-    coral_combo_plot_list = [('coral', 'mucus'), ('coral', 'sea_water'), ('coral', 'turf'), ('coral', 'sed')]
-    for combo in coral_combo_plot_list:
-        set_list = [sample_type_set_dict[combo[0]][1], sample_type_set_dict[combo[1]][1]]
-        labels = [sample_type_set_dict[combo[0]][0], sample_type_set_dict[combo[1]][0]]
-        c = venn2(subsets=set_list, set_labels=labels, ax=axes[int(ax_count / 2)][ax_count % 2])
-        element_list = ['10', '01']
-        for i in range(2):
-            # for each path we need to work out which colour we want it to be
-            # we can do this with a simple dict outside of here
-            c.get_patch_by_id(element_list[i]).set_color(colour_dict[labels[i]])
-            c.get_patch_by_id(element_list[i]).set_edgecolor('none')
-            c.get_patch_by_id(element_list[i]).set_alpha(0.4)
-        ax_count += 1
 
-    figure.savefig('coral_combo_venn_all_dates.svg')
-    figure.show()
-    plt.close()
+        if sub_plot_type[0] != 'raw_contigs':
+            ax2 = axarr[axarr_index].twinx()
+            ax2.set_yscale('symlog')
+            axarr[axarr_index].set_xlabel(y_axis_labels[axarr_index])
+            axarr[axarr_index].set_yscale('symlog')
+        else:
+            axarr[axarr_index].set_xlabel(y_axis_labels[axarr_index])
+            axarr[axarr_index].set_yscale('symlog')
+            locmin = matplotlib.ticker.LogLocator(base=10.0, subs=(0.2, 0.4, 0.6, 0.8), numticks=12)
+            axarr[axarr_index].yaxis.set_minor_locator(locmin)
+            axarr[axarr_index].yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
 
 
 
 
-    figure, axes = plt.subplots(1, 1)
-    # now lets plot the other vann of the three env_types against each other
-    set_list = [sample_type_set_dict['sea_water'][1], sample_type_set_dict['turf'][1],
-                sample_type_set_dict['sed'][1]]
-    labels = [sample_type_set_dict['sea_water'][0], sample_type_set_dict['turf'][0], sample_type_set_dict['sed'][0]]
+        # we will convert the sed_close and sed_far to simply sed
+        info_df = info_df.applymap(lambda x: 'sed' if "sed" in str(x) else x)
+        env_types_list = ['coral', 'mucus', 'sea_water', 'sed', 'turf']
 
-    c = venn3(subsets=set_list, set_labels=labels, ax=axes)
-    element_list = ['100', '010', '001']
-    for i in range(3):
-        # for each path we need to work out which colour we want it to be
-        # we can do this with a simple dict outside of here
-        c.get_patch_by_id(element_list[i]).set_color(colour_dict[labels[i]])
-        c.get_patch_by_id(element_list[i]).set_edgecolor('none')
-        c.get_patch_by_id(element_list[i]).set_alpha(0.4)
+        for env_type in env_types_list:
 
-    figure.savefig('env_combo_venn_all_dates.svg')
-    figure.show()
-    apples = 'adf'
+
+            if sub_plot_type[0] == 'raw_contigs':
+                # here we will plot just the raw_contigs
+                # get a sub df of the main df according to the env_type
+                # get subset of the main dfs that contain only the coral samples
+                env_info_df = info_df[info_df['environ type'] == env_type]
+                env_QC_info_df = QC_info_df.loc[env_info_df.index.values.tolist()]
+                sys.stdout.write('\nGenerating plotting info for {} samples in subplot type {}\n'
+                                 .format(env_type, sub_plot_type))
+                # the data we are going to be plotting is so simple that rather than collecting it and then
+                # plotting it we may as well just go straight to plotting it from the df
+
+                # PLOT ABSOLUTE
+                # first plot the actual datapoints
+                # x will be the indices, y will be the actual value
+                y_values = list(env_QC_info_df.loc[:, sub_plot_type[0]])
+                x_values = [ind[ind_index] for y in y_values]
+                axarr[axarr_index].scatter(x_values, y_values, marker='.', s=1, c='b')
+
+                # now plot the mean and error bars
+                # I know there is a mean and SD function on a pandas series but it is throwing out all sorts of
+                # erros so lest stick with what we know
+                std = statistics.stdev(y_values)
+                mean = statistics.mean(y_values)
+
+                axarr[axarr_index].scatter(x=ind[ind_index] + 0.125, y=mean, marker='s', s=8, c='b')
+                # axarr[axarr_index].errorbar(x=ind[ind_index] + 0.125, y=mean, yerr=std, fmt='none', c='b')
+
+                if env_type == 'turf':
+
+                    axarr[axarr_index].set_ylabel('', color='b')
+                    axarr[axarr_index].tick_params('y', colors='b')
+                    axarr[axarr_index].spines['right'].set_visible(False)
+                    # axarr[axarr_index].spines['bottom'].set_visible(False)
+                    axarr[axarr_index].spines['top'].set_visible(False)
+
+                    # set the ticks
+                    # axarr[axarr_index].set_xticks([a + 0.1875 for a in range(6)], minor=False)
+                    # axarr[axarr_index].set_xticklabels(env_types_list)
+                    axarr[axarr_index].tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
+                    # set the xaxis title
+                    axarr[axarr_index].set_xlabel('raw_contigs')
+
+
+                    # axarr[axarr_index].set_ylim((0, 1200000))
+
+                ind_index += 1
+            elif sub_plot_type[0] != 'med_ratio':
+                # get a sub df of the main df according to the env_type
+                # get subset of the main dfs that contain only the coral samples
+                env_info_df = info_df[info_df['environ type'] == env_type]
+                env_QC_info_df = QC_info_df.loc[env_info_df.index.values.tolist()]
+                sys.stdout.write('\nGenerating plotting info for {} samples in subplot type {}\n'
+                                 .format(env_type, sub_plot_type))
+                # the data we are going to be plotting is so simple that rather than collecting it and then
+                # plotting it we may as well just go straight to plotting it from the df
+
+                # PLOT ABSOLUTE
+                # first plot the actual datapoints
+                # x will be the indices, y will be the actual value
+                y_values = list(env_QC_info_df.loc[:, sub_plot_type[0]])
+                x_values = [ind[ind_index] for y in y_values]
+                axarr[axarr_index].scatter(x_values, y_values, marker='.', s=1, c='b')
+
+                # now plot the mean and error bars
+                # I know there is a mean and SD function on a pandas series but it is throwing out all sorts of
+                # erros so lest stick with what we know
+                std = statistics.stdev(y_values)
+                mean = statistics.mean(y_values)
+                axarr[axarr_index].scatter(x=ind[ind_index] + 0.125, y=mean, marker='s', s=8, c='b')
+                # axarr[axarr_index].errorbar(x=ind[ind_index] + 0.125, y=mean, yerr=std, fmt='none', c='b')
+
+                if env_type == 'coral':
+                    axarr[axarr_index].set_ylabel('', color='b')
+                    axarr[axarr_index].tick_params('y', colors='b')
+
+
+                # PLOT UNIQUE
+                # first plot the actual datapoints
+                # x will be the indices, y will be the actual value
+
+                y_values = list(env_QC_info_df.loc[:, sub_plot_type[1]])
+                x_values = [ind[ind_index] + 0.250 for y in y_values]
+                ax2.scatter(x_values, y_values, marker='.', s=1, c='r')
+
+                # now plot the mean and error bars
+                std = statistics.stdev(y_values)
+                mean = statistics.mean(y_values)
+
+                ax2.scatter(x=ind[ind_index] + 0.375, y=mean, marker='o', s=8, c='r')
+                # ax2.errorbar(x=ind[ind_index] + 0.375, y=mean, yerr=std, fmt='none', c='r')
+
+                if env_type == 'coral':
+                    if sub_plot_type[0] == 'post_taxa_id_absolute_symbiodinium_seqs':
+                        ax2.set_ylabel('', color='r')
+                        ax2.tick_params('y', colors='r')
+                        axarr[axarr_index].set_xticks([a + 0.1875 for a in range(6)], minor=False)
+                        axarr[axarr_index].set_xticklabels(env_types_list)
+                        axarr[axarr_index].spines['top'].set_visible(False)
+                        ax2.spines['top'].set_visible(False)
+                        axarr[axarr_index].set_xlabel(y_axis_labels[axarr_index])
+                    else:
+                        ax2.set_ylabel( '', color='r')
+                        ax2.tick_params('y', colors='r')
+                        axarr[axarr_index].spines['top'].set_visible(False)
+                        # axarr[axarr_index].spines['bottom'].set_visible(False)
+                        ax2.spines['top'].set_visible(False)
+                        # ax2.spines['bottom'].set_visible(False)
+
+                        # axarr[axarr_index].set_xticks([a + 0.1875 for a in range(6)], minor=False)
+                        # axarr[axarr_index].set_xticklabels(env_types_list)
+                        axarr[axarr_index].tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
+                        ax2.tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
+                        axarr[axarr_index].set_xlabel(y_axis_labels[axarr_index])
+                        # if sub_plot_type[0] == 'post_taxa_id_absolute_non_symbiodinium_seqs':
+                        #     # axarr[axarr_index].set_ylim((0, 150000))
+                        #     # axarr[axarr_index].set_yscale('symlog')
+                        #     # formatter = FuncFormatter(log_10_product)
+                        #     # axarr[0].xaxis.set_major_formatter(formatter)
+                        #     # axarr[0].set_xlim(1e-1, 1e5)
+                        #     # locmaj = matplotlib.ticker.LogLocator(base=10, numticks=12)
+                        #     # axarr[axarr_index].yaxis.set_major_locator(locmaj)
+                        #     # axarr[0].set_xticks = [10 ** i for i in range(2, 6)]
+                        #     # axarr[0].set_xticklabels = [10 ** i for i in range(2, 6)]
+                        #     # locmin = matplotlib.ticker.LogLocator(base=10.0, subs=(0.2, 0.4, 0.6, 0.8), numticks=12)
+                        #     # axarr[axarr_index].yaxis.set_minor_locator(locmin)
+                        #     # axarr[axarr_index].yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
+                        # elif sub_plot_type[0] == 'post_taxa_id_absolute_symbiodinium_seqs':
+                        #     axarr[axarr_index].set_ylim((0, 800000))
+                        # elif sub_plot_type[0] == 'post_med_absolute':
+                        #     axarr[axarr_index].set_ylim((0, 800000))
+
+
+                ind_index += 1
+            else:
+                # here we need to ploto out the MED ratios.
+                # these are simply going to be the med abosultes divided by the symbiodinium absolutes
+                # and same for the uniques.
+                # get a sub df of the main df according to the env_type
+                # get subset of the main dfs that contain only the coral samples
+
+                env_info_df = info_df[info_df['environ type'] == env_type]
+                env_QC_info_df = QC_info_df.loc[env_info_df.index.values.tolist()]
+                sys.stdout.write('\nGenerating plotting info for {} samples in subplot type {}\n'
+                                 .format(env_type, sub_plot_type))
+                # the data we are going to be plotting is so simple that rather than collecting it and then
+                # plotting it we may as well just go straight to plotting it from the df
+
+                # PLOT ABSOLUTE
+                # first plot the actual datapoints
+                # x will be the indices, y will be the actual value
+                y_values = [tup[0] / tup[1] for tup in zip(list(env_QC_info_df.loc[:, 'post_med_absolute']), list(
+                    env_QC_info_df.loc[:, 'post_taxa_id_absolute_symbiodinium_seqs']))]
+                x_values = [ind[ind_index] for y in y_values]
+                axarr[axarr_index].scatter(x_values, y_values, marker='.', s=1, c='b')
+
+                # now plot the mean and error bars
+                # I know there is a mean and SD function on a pandas series but it is throwing out all sorts of
+                # erros so lest stick with what we know
+                std = statistics.stdev(y_values)
+                mean = statistics.mean(y_values)
+                axarr[axarr_index].scatter(x=ind[ind_index] + 0.125, y=mean, marker='s', s=8, c='b')
+                # axarr[axarr_index].errorbar(x=ind[ind_index] + 0.125, y=mean, yerr=std, fmt='none', c='b')
+
+                if env_type == 'coral':
+                    axarr[axarr_index].set_ylabel('', color='b')
+                    axarr[axarr_index].tick_params('y', colors='b')
+
+                    axarr[axarr_index].spines['top'].set_visible(False)
+                    # axarr[axarr_index].spines['bottom'].set_visible(False)
+                    ax2.spines['top'].set_visible(False)
+                    # ax2.spines['bottom'].set_visible(False)
+
+                    axarr[axarr_index].set_xticks([a + 0.1875 for a in range(6)], minor=False)
+                    axarr[axarr_index].set_xticklabels(env_types_list)
+                    axarr[axarr_index].set_xlabel('post-MED / Symbiodinium')
+                    axarr[axarr_index].set_ylim((0, 1.1))
+
+                # PLOT UNIQUE
+                # first plot the actual datapoints
+                # x will be the indices, y will be the actual value
+
+                y_values = [tup[0] / tup[1] for tup in zip(list(env_QC_info_df.loc[:, 'post_med_unique']), list(
+                    env_QC_info_df.loc[:, 'post_taxa_id_unique_symbiodinium_seqs']))]
+                x_values = [ind[ind_index] + 0.250 for y in y_values]
+                ax2.scatter(x_values, y_values, marker='.', s=1, c='r')
+
+                # now plot the mean and error bars
+                std = statistics.stdev(y_values)
+                mean = statistics.mean(y_values)
+
+                ax2.scatter(x=ind[ind_index] + 0.375, y=mean, marker='o', s=8, c='r')
+                # ax2.errorbar(x=ind[ind_index] + 0.375, y=mean, yerr=std, fmt='none', c='r')
+
+                if env_type == 'coral':
+                    ax2.set_ylabel('', color='r')
+                    ax2.tick_params('y', colors='r')
+
+                ind_index += 1
+
+        axarr_index += 1
+    apples = 'asdf'
+    f.text(0.01, 0.55, 'absolute number of ITS2 sequences\n(log10)', va='center', ha='center', rotation='vertical', color='b')
+    f.text(1 - 0.01, 0.40, 'unique number of ITS2 sequences\n(log10)', ha='center', va='center', rotation='vertical', color='r')
+    # f.text(0.07, 0.18, 'ratio', va='center', rotation='vertical', color='b')
+    # f.text(1 - 0.05, 0.18, 'ratio', va='center', rotation='vertical', color='r')
+
+
+    plt.tight_layout()
+    f.savefig('diversity_stats_no_MED.svg')
+    f.savefig('diversity_stats_no_MED.png')
+    f.show()
+    return
+
+# def make_venns():
+#     ''' Here we will aim to make venn diagrams we will make a set of three 2 cirle venns which will
+#     just show the comparison of the env_samples to the coral.
+#     We will also make a set of four 3 circle venn diagrams which will show all 3 way combinations.
+#     There is a neat little module called matplotlib_venn which we can use to do this and it is dead simple.
+#     All you need to do is pass it a list of sets.'''
+#
+#     # read in the dataframes created previously
+#     sp_output_df = pickle.load(open('sp_output_df.pickle', 'rb'))
+#     QC_info_df = pickle.load(open('QC_info_df.pickle', 'rb'))
+#     info_df = pickle.load(open('info_df.pickle', 'rb'))
+#
+#     # create a dictionary that is sample name to env_type
+#     sample_name_to_sample_type_dict = {}
+#     for info_index in info_df.index.values.tolist():
+#         if info_df.loc[info_index, 'environ type'] == 'coral':
+#             sample_name_to_sample_type_dict[info_index] = 'coral'
+#         elif info_df.loc[info_index, 'environ type'] == 'sea_water':
+#             sample_name_to_sample_type_dict[info_index] = 'sea_water'
+#         elif info_df.loc[info_index, 'environ type'] == 'sed_far':
+#             sample_name_to_sample_type_dict[info_index] = 'sed'
+#         elif info_df.loc[info_index, 'environ type'] == 'sed_close':
+#             sample_name_to_sample_type_dict[info_index] = 'sed'
+#         elif info_df.loc[info_index, 'environ type'] == 'mucus':
+#             sample_name_to_sample_type_dict[info_index] = 'mucus'
+#         elif info_df.loc[info_index, 'environ type'] == 'turf':
+#             sample_name_to_sample_type_dict[info_index] = 'turf'
+#
+#     # here we have the dict populated and we can now get to work pulling out the set of sequence
+#     # names found in each of the sample types
+#     sample_types = ['coral', 'sea_water', 'sed', 'mucus', 'turf']
+#
+#     set_list = [set() for type in sample_types]
+#
+#     # now work through the sp output and check to see which columns are non-zero columns and add these column
+#     # labels into the respective sets
+#     for sp_output_index in sp_output_df.index.values.tolist():
+#         type_of_sample  = sample_name_to_sample_type_dict[sp_output_index]
+#         non_zero_seqs = list(sp_output_df.loc[sp_output_index][sp_output_df.loc[sp_output_index] > 0].index)
+#         set_list[sample_types.index(type_of_sample)].update(non_zero_seqs)
+#
+#     # here we should have the sets populated
+#     # now create a dictionary that is the sample_type name to the set
+#     sample_type_set_dict = {}
+#     for smp_t in sample_types:
+#         sample_type_set_dict[smp_t] = (smp_t, set_list[sample_types.index(smp_t)])
+#
+#     colour_dict = {
+#         'coral' : 'orange',
+#         'sed' : 'brown',
+#         'sea_water' : 'blue',
+#         'turf' : 'green',
+#         'mucus' : 'gray'}
+#
+#
+#     figure, axes = plt.subplots(2, 2)
+#     ax_count = 0
+#     # then simply do permutations for the 5 x 3
+#
+#     coral_combo_plot_list = [('coral', 'mucus'), ('coral', 'sea_water'), ('coral', 'turf'), ('coral', 'sed')]
+#     for combo in coral_combo_plot_list:
+#         set_list = [sample_type_set_dict[combo[0]][1], sample_type_set_dict[combo[1]][1]]
+#         labels = [sample_type_set_dict[combo[0]][0], sample_type_set_dict[combo[1]][0]]
+#         c = venn2(subsets=set_list, set_labels=labels, ax=axes[int(ax_count / 2)][ax_count % 2])
+#         element_list = ['10', '01']
+#         for i in range(2):
+#             # for each path we need to work out which colour we want it to be
+#             # we can do this with a simple dict outside of here
+#             c.get_patch_by_id(element_list[i]).set_color(colour_dict[labels[i]])
+#             c.get_patch_by_id(element_list[i]).set_edgecolor('none')
+#             c.get_patch_by_id(element_list[i]).set_alpha(0.4)
+#         ax_count += 1
+#
+#
+#
+#     figure.savefig('coral_combo_venn.svg')
+#     figure.show()
+#     plt.close()
+#
+#     figure, axes = plt.subplots(1, 1)
+#     # now lets plot the other vann of the three env_types against each other
+#     set_list = [sample_type_set_dict['sea_water'][1], sample_type_set_dict['turf'][1], sample_type_set_dict['sed'][1]]
+#     labels = [sample_type_set_dict['sea_water'][0], sample_type_set_dict['turf'][0], sample_type_set_dict['sed'][0]]
+#
+#     c = venn3(subsets=set_list, set_labels=labels, ax=axes)
+#     element_list = ['100', '010', '001']
+#     for i in range(3):
+#         # for each path we need to work out which colour we want it to be
+#         # we can do this with a simple dict outside of here
+#         c.get_patch_by_id(element_list[i]).set_color(colour_dict[labels[i]])
+#         c.get_patch_by_id(element_list[i]).set_edgecolor('none')
+#         c.get_patch_by_id(element_list[i]).set_alpha(0.4)
+#
+#     figure.savefig('env_combo_venn.svg')
+#     figure.show()
+#     apples = 'adf'
+#
+# def make_venns_all_dates():
+#     ''' This is a modification of the above the only difference being that we are working with all samples
+#     of all times. It would be nice to somehow represent what proportion of the total sequences are represented
+#     by the unique samples but I don't actually think this is possible. Instead we will create labels that
+#     show what proportion of the total sequences the unique sequences represent.
+#     Here we will aim to make venn diagrams we will make a set of three 2 cirle venns which will
+#     just show the comparison of the env_samples to the coral.
+#     We will also make a set of four 3 circle venn diagrams which will show all 3 way combinations.
+#     There is a neat little module called matplotlib_venn which we can use to do this and it is dead simple.
+#     All you need to do is pass it a list of sets.'''
+#
+#     # read in the dataframes created previously
+#     sp_output_df = pickle.load(open('sp_output_df_all_dates.pickle', 'rb'))
+#     QC_info_df = pickle.load(open('QC_info_df_all_dates.pickle', 'rb'))
+#     info_df = pickle.load(open('info_df_all_dates.pickle', 'rb'))
+#
+#
+#     # in order to be able to calculate the proportion of a sample types sequencs that the various sequence regions
+#     # represent in proportion to the total sequences we need to work with a prportion df
+#     sp_output_df = sp_output_df[:].div(sp_output_df[:].sum(axis=1), axis=0)
+#
+#     # create a dictionary that is sample name to env_type
+#     sample_name_to_sample_type_dict = {}
+#     for info_index in info_df.index.values.tolist():
+#         if info_df.loc[info_index, 'environ type'] == 'coral':
+#             sample_name_to_sample_type_dict[info_index] = 'coral'
+#         elif info_df.loc[info_index, 'environ type'] == 'sea_water':
+#             sample_name_to_sample_type_dict[info_index] = 'sea_water'
+#         elif info_df.loc[info_index, 'environ type'] == 'sed_far':
+#             sample_name_to_sample_type_dict[info_index] = 'sed'
+#         elif info_df.loc[info_index, 'environ type'] == 'sed_close':
+#             sample_name_to_sample_type_dict[info_index] = 'sed'
+#         elif info_df.loc[info_index, 'environ type'] == 'mucus':
+#             sample_name_to_sample_type_dict[info_index] = 'mucus'
+#         elif info_df.loc[info_index, 'environ type'] == 'turf':
+#             sample_name_to_sample_type_dict[info_index] = 'turf'
+#
+#     # here we have the dict populated and we can now get to work pulling out the set of sequence
+#     # names found in each of the sample types
+#     sample_types = ['coral', 'sea_water', 'sed', 'mucus', 'turf']
+#
+#
+#     set_list = [set() for type in sample_types]
+#
+#     # now work through the sp output and check to see which columns are non-zero columns and add these column
+#     # labels into the respective sets
+#     # here we will create a list of dictionaries, one per sample type and this will be
+#     # key = sequence, value = cumulative rel_props
+#     for sp_output_index in sp_output_df.index.values.tolist():
+#         type_of_sample = sample_name_to_sample_type_dict[sp_output_index]
+#         non_zero_seqs = list(sp_output_df.loc[sp_output_index][sp_output_df.loc[sp_output_index] > 0].index)
+#         set_list[sample_types.index(type_of_sample)].update(non_zero_seqs)
+#
+#     # here we should have the sets populated
+#     # now create a dictionary that is the sample_type name to the set
+#     sample_type_set_dict = {}
+#     for smp_t in sample_types:
+#         sample_type_set_dict[smp_t] = (smp_t, set_list[sample_types.index(smp_t)])
+#
+#     colour_dict = {
+#         'coral': 'orange',
+#         'sed': 'brown',
+#         'sea_water': 'blue',
+#         'turf': 'green',
+#         'mucus': 'gray'}
+#
+#     figure, axes = plt.subplots(2, 2)
+#     ax_count = 0
+#     # then simply do permutations for the 5 x 3
+#
+#     coral_combo_plot_list = [('coral', 'mucus'), ('coral', 'sea_water'), ('coral', 'turf'), ('coral', 'sed')]
+#     for combo in coral_combo_plot_list:
+#         set_list = [sample_type_set_dict[combo[0]][1], sample_type_set_dict[combo[1]][1]]
+#         labels = [sample_type_set_dict[combo[0]][0], sample_type_set_dict[combo[1]][0]]
+#         c = venn2(subsets=set_list, set_labels=labels, ax=axes[int(ax_count / 2)][ax_count % 2])
+#         element_list = ['10', '01']
+#         for i in range(2):
+#             # for each path we need to work out which colour we want it to be
+#             # we can do this with a simple dict outside of here
+#             c.get_patch_by_id(element_list[i]).set_color(colour_dict[labels[i]])
+#             c.get_patch_by_id(element_list[i]).set_edgecolor('none')
+#             c.get_patch_by_id(element_list[i]).set_alpha(0.4)
+#         ax_count += 1
+#
+#     figure.savefig('coral_combo_venn_all_dates.svg')
+#     figure.show()
+#     plt.close()
+#
+#
+#
+#
+#     figure, axes = plt.subplots(1, 1)
+#     # now lets plot the other vann of the three env_types against each other
+#     set_list = [sample_type_set_dict['sea_water'][1], sample_type_set_dict['turf'][1],
+#                 sample_type_set_dict['sed'][1]]
+#     labels = [sample_type_set_dict['sea_water'][0], sample_type_set_dict['turf'][0], sample_type_set_dict['sed'][0]]
+#
+#     c = venn3(subsets=set_list, set_labels=labels, ax=axes)
+#     element_list = ['100', '010', '001']
+#     for i in range(3):
+#         # for each path we need to work out which colour we want it to be
+#         # we can do this with a simple dict outside of here
+#         c.get_patch_by_id(element_list[i]).set_color(colour_dict[labels[i]])
+#         c.get_patch_by_id(element_list[i]).set_edgecolor('none')
+#         c.get_patch_by_id(element_list[i]).set_alpha(0.4)
+#
+#     figure.savefig('env_combo_venn_all_dates.svg')
+#     figure.show()
+#     apples = 'adf'
 
 # code for making the venns
 def make_venns_all_dates_rel_props_annotated():
@@ -2996,14 +3301,14 @@ def get_colour_list():
 def rarefaction_curves():
     ''' The purpose of this will be to create a figure that has a rarefaction curve for each of the sample types.
     I'm hoping that this will do an excellent job of mitigating the problem we currently have with regards to the
-    differences in sequences returned from the different environemtns.
+    differences in sequences returned from the different environments.
     We can look up a paper that supports the fact that relatively accurate inference can be made
     using the begining part of the curve.
 
     To draw the rarefaction curve we will work on a sample by sample basis. For each sample, we will create a list
     that contains the resundant seuqnces according to aboslute counts (massive list) and then simply do random
     selects on this without replacement to get an array of sequences in the pick order. We can then iterate through
-    this picked order and put the seqs into a set. We can then get the len of the set at given intervlas. the intercal
+    this picked order and put the seqs into a set. We can then get the len of the set at given interval. the interval
     vs. the set len will be our coordinates for the plotting. However, we will bootstrap this so we will do the above
     process per sample maybe 100 times. then for each of the intervals we can get an average. Then for all of the
     sampes of a given sample type we can average all of the diversity points at each interval and plot this point
@@ -3022,6 +3327,7 @@ def rarefaction_curves():
     sp_output_df.drop('P7_G07', axis='index', inplace=True)
     QC_info_df.drop('P7_G07', axis='index', inplace=True)
     info_df.drop('P7_G07', axis='index', inplace=True)
+
     # remove samples that don't have any counts in the MED QC columns
     keeper_row_labels = QC_info_df.index[QC_info_df['post_med_absolute'] != 0]
     QC_info_df = QC_info_df.loc[keeper_row_labels]
@@ -3217,6 +3523,273 @@ def rarefaction_curves():
     plt.savefig('rarefaction_one_third_cutoff.png')
     apples = 'asdf'
 
+def rarefaction_curves_no_MED():
+    '''I am going to modify this so that we do the same style of rarefaction only working with pre-MED sequences.'''
+
+    ''' The purpose of this will be to create a figure that has a rarefaction curve for each of the sample types.
+    I'm hoping that this will do an excellent job of mitigating the problem we currently have with regards to the
+    differences in sequences returned from the different environments.
+    We can look up a paper that supports the fact that relatively accurate inference can be made
+    using the begining part of the curve.
+
+    To draw the rarefaction curve we will work on a sample by sample basis. For each sample, we will create a list
+    that contains the resundant seuqnces according to aboslute counts (massive list) and then simply do random
+    selects on this without replacement to get an array of sequences in the pick order. We can then iterate through
+    this picked order and put the seqs into a set. We can then get the len of the set at given interval. the interval
+    vs. the set len will be our coordinates for the plotting. However, we will bootstrap this so we will do the above
+    process per sample maybe 100 times. then for each of the intervals we can get an average. Then for all of the
+    sampes of a given sample type we can average all of the diversity points at each interval and plot this point
+    (maybe we also plot the individual points too). Obviously we will lose points as we work along our intervals.
+    This is fine (and an inherent part of the data which we are precielcy trying to overcome with this rarefaction
+    approach) but we should make the reader aware of this decrease by having an n on the graph. Also error bars would
+    be nice. This may mean that we need to have different subplots for each of the curves though.
+    '''
+
+    # read in the dataframes
+    sp_output_df = pickle.load(open('sp_output_df_all_dates.pickle', 'rb'))
+    QC_info_df = pickle.load(open('QC_info_df_all_dates.pickle', 'rb'))
+    info_df = pickle.load(open('info_df_all_dates.pickle', 'rb'))
+
+    # remove sample P7-G07 as it has no Symbiodinium samples
+    sp_output_df.drop('P7_G07', axis='index', inplace=True)
+    QC_info_df.drop('P7_G07', axis='index', inplace=True)
+    info_df.drop('P7_G07', axis='index', inplace=True)
+
+    # remove samples that don't have any counts in the MED QC columns
+    keeper_row_labels = QC_info_df.index[QC_info_df['post_taxa_id_absolute_symbiodinium_seqs'] != 0]
+    QC_info_df = QC_info_df.loc[keeper_row_labels]
+    sp_output_df = sp_output_df.loc[keeper_row_labels]
+    info_df = info_df.loc[keeper_row_labels]
+    apples = 'asdf'
+
+    # create a dictionary that is sample name to env_type
+    sample_name_to_sample_type_dict = {}
+    for info_index in info_df.index.values.tolist():
+        if info_df.loc[info_index, 'environ type'] == 'coral':
+            sample_name_to_sample_type_dict[info_index] = 'coral'
+        elif info_df.loc[info_index, 'environ type'] == 'sea_water':
+            sample_name_to_sample_type_dict[info_index] = 'sea_water'
+        elif info_df.loc[info_index, 'environ type'] == 'sed_far':
+            sample_name_to_sample_type_dict[info_index] = 'sed'
+        elif info_df.loc[info_index, 'environ type'] == 'sed_close':
+            sample_name_to_sample_type_dict[info_index] = 'sed'
+        elif info_df.loc[info_index, 'environ type'] == 'mucus':
+            sample_name_to_sample_type_dict[info_index] = 'mucus'
+        elif info_df.loc[info_index, 'environ type'] == 'turf':
+            sample_name_to_sample_type_dict[info_index] = 'turf'
+
+    boot_iterations = 100
+
+    # get a list of the sampling frequencies that we want to sample over
+    sampling_frequencies = []
+    additions_list = [0, 0.25, 0.5, 0.75]
+    orders = range(1, 6)
+    for order in orders:
+        for addition in additions_list:
+            sampling_frequencies.append(int(10 ** (order + addition)))
+
+    if os.path.isfile('result_dict_rarefaction_{}_no_MED.pickle'.format(boot_iterations)):
+        result_dict = pickle.load(open('result_dict_rarefaction_{}_no_MED.pickle'.format(boot_iterations), 'rb'))
+        apples = 'asdf'
+    else:
+
+
+        # we will send one series to be bootstrapped to a core for MPing
+        input_series_queue = Queue()
+
+        num_proc = 7
+
+        manager = Manager()
+        result_dict = manager.dict()
+
+        # for each sample, create a tup that is the sample name and a dictionary
+        # the dictionary should be the a sequence identifier as key and an absolute abundance as value
+        # previously this was done using the sp_output_df. However now we will do this using the pre_MED_seq dump
+        # once we have the sequence data the strucutre defined above we should be able to pass this into the
+        # the rest of the script in order to do the actual modelling and plotting of the rarefaction curve
+
+        list_of_sample_names_from_indices = sp_output_df.index.values.tolist()
+        tuple_holding_list = create_smp_name_to_dict_tup_list(list_of_sample_names=list_of_sample_names_from_indices)
+
+        # put each tup into the queue to process
+        for smp_name_to_dict_tup in tuple_holding_list:
+            input_series_queue.put(smp_name_to_dict_tup)
+
+        for i in range(num_proc):
+            input_series_queue.put('STOP')
+
+        list_of_processes = []
+        for N in range(num_proc):
+            p = Process(target=rarefaction_curve_worker, args=(input_series_queue, boot_iterations,
+                                                               result_dict, sampling_frequencies))
+            list_of_processes.append(p)
+            p.start()
+
+        for p in list_of_processes:
+            p.join()
+
+        pickle.dump(dict(result_dict), open('result_dict_rarefaction_{}_no_MED.pickle'.format(boot_iterations), 'wb'))
+
+    # we have our results that we can work with held in the result_dict
+    # we should be able to work directly with this dictionary for plotting so lets set this up now
+
+    colour_dict = {
+        'coral': 'orange',
+        'sed': 'brown',
+        'sea_water': 'blue',
+        'turf': 'green',
+        'mucus': 'gray'}
+
+    fig, axarr = plt.subplots(1, 6, sharey=True, sharex=True, figsize=(10, 6))
+
+    # axarr[0].set_xscale('log')
+
+    axx_ind = 0
+    env_type_list = ['coral', 'mucus', 'sea_water', 'sed', 'turf']
+
+    # Dict that will hold a list of the averaged series grouped by the sample type
+    data_info = defaultdict(list)
+
+    # for each sample workout the means of the bottstraps as a series and add these to the dict
+    for smp in result_dict.keys():
+        env_type_of_smp = sample_name_to_sample_type_dict[smp]
+        temp_df = pd.DataFrame(result_dict[smp])
+        averaged_series = temp_df.mean(axis=0)
+        averaged_series.name = smp
+        data_info[env_type_of_smp].append(averaged_series)
+
+    # here we should have all of the info we need to make a dataframe that can directly be used for plotting for
+    # each of the environmental sample types
+
+    # This will hold the pairs of x, y lists for each of the environment types so that we can plot them all on the
+    # last plot
+    line_holder = []
+    for env_type in env_type_list:
+        try:
+            # env_type_df = pd.DataFrame(data_info[env_type], columns = sampling_frequencies)
+            env_type_df = pd.DataFrame.from_items([(s.name, s) for s in data_info[env_type]]).T
+        except:
+            asdf = 'asdf'
+
+        # here we need to add the columns to the df.
+        # if we had points for all of the sampling frequencies then we can simply use the sampling frequency values
+        # else we need to use a slice of the sampling_frequencies
+        if len(list(env_type_df)) == len(sampling_frequencies):
+            env_type_df.columns = sampling_frequencies
+        else:
+            env_type_df.columns = sampling_frequencies[:len(list(env_type_df))]
+
+        mean_y = []
+        mean_x = []
+        num_samples = len(env_type_df.iloc[:, 0])
+        for col in list(env_type_df):
+            # here plot the individual points (one pont for each of the samples of the env_type that have a point for
+            # this sampling frequency
+            y_list = env_type_df[col].dropna().tolist()
+            x_list = [col for i in range(len(y_list))]
+            axarr[axx_ind].scatter(x_list, y_list, marker='.', color=colour_dict[env_type], s=1)
+            axarr[axx_ind].text(x_list[0], max(y_list) + 10, str(len(y_list)), fontsize=8, ha='center')
+
+            # only plot the line point if the number of samples remaining is > 1/3 of the total samples
+            if len(y_list) < num_samples / 3:
+                break
+            mean_y.append(sum(y_list) / len(y_list))
+            mean_x.append(x_list[0])
+
+        # now draw the line
+        apples = 'asdf'
+        axarr[axx_ind].plot(mean_x, mean_y, color=colour_dict[env_type])
+        line_holder.append((mean_x, mean_y, colour_dict[env_type]))
+        # plt.show()
+        apples = 'asdf'
+
+        axarr[axx_ind].set_xlabel(env_type)
+        axx_ind += 1
+
+    for tup in line_holder:
+        axarr[5].plot(tup[0], tup[1], color=tup[2])
+        axarr[5].set_xlabel('all')
+
+    # ticks_list = [10 ** i for i in range(6)]
+    # plt.set_xticks = [10 ** i for i in range(2, 6)]
+
+    # NB getting the axes to behave well when logged was tricky but the below link gave a good solution
+
+    axarr[0].set_xscale('log')
+    # formatter = FuncFormatter(log_10_product)
+    # axarr[0].xaxis.set_major_formatter(formatter)
+    # axarr[0].set_xlim(1e-1, 1e5)
+    locmaj = matplotlib.ticker.LogLocator(base=10, numticks=12)
+    axarr[0].xaxis.set_major_locator(locmaj)
+    # axarr[0].set_xticks = [10 ** i for i in range(2, 6)]
+    # axarr[0].set_xticklabels = [10 ** i for i in range(2, 6)]
+    locmin = matplotlib.ticker.LogLocator(base=10.0, subs=(0.2, 0.4, 0.6, 0.8), numticks=12)
+    axarr[0].xaxis.set_minor_locator(locmin)
+    axarr[0].xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
+
+    grid(True)
+    # plt.xlabel('sampling point log10')
+    # plt.ylabel('unique sequences')
+    fig.text(0.5, 0.02, 'sampling point log10', ha='center', va='center')
+    fig.text(0.06, 0.5, 'unique sequences', ha='center', va='center', rotation='vertical')
+    # plt.tight_layout()
+    plt.savefig('rarefaction_one_third_cutoff.svg')
+    plt.savefig('rarefaction_one_third_cutoff.png')
+    apples = 'asdf'
+
+
+def create_smp_name_to_dict_tup_list(list_of_sample_names):
+    pre_MED_seq_dump_dir = '/Users/humebc/Google Drive/projects/gabi_ITS2/pre_MED_seqs'
+    sample_files = [f for f in os.listdir(pre_MED_seq_dump_dir)]
+    tuple_holding_list = []
+    for smp_f in sample_files:
+
+        # find what the sample name is by parsing through the sample names from the df and finding which one fits in
+        # we will use the count to make sure that only one name fits into the file and is therefore unique.
+        count = 0
+        for smp_index in list_of_sample_names:
+            if smp_index in smp_f.replace('-', '_'):
+                count += 1
+                sample_name = smp_index
+
+        if count > 1:
+            sys.exit('Unique names not found')
+        if count == 0:
+            # then this may be one of the samples that we dropped and we can just continue
+            continue
+        print('Creating abundance dict for sample: {}'.format(sample_name))
+        # now we have the sample name we need to create the dictionary. We can do this easily from the name file
+        # we whould be sure to go through all of the clades and combine these into a single dictionary. At this
+        # point we are just looking for different sequences and it doesn't matter what clade they are from
+
+        # this is the directory that the different clade files will be in.
+        # we will need to go through each of the clade directories for each of the samples and work with the
+        # name file that we find in each one of these
+        pre_MED_wkd = '{}/{}'.format(pre_MED_seq_dump_dir, smp_f)
+
+        sample_clade_dirs = [f for f in os.listdir(pre_MED_wkd)]
+
+        dict_to_populate = {}
+        for clade_dir in sample_clade_dirs:
+            pre_MED_wkd_clade = '{}/{}'.format(pre_MED_wkd, clade_dir)
+            for smp_clade_file in os.listdir(pre_MED_wkd_clade):
+                if '.name' in smp_clade_file:
+                    # then this is the name file we want to be working with
+                    nameFile = []
+                    with open('{}/{}'.format(pre_MED_wkd_clade, smp_clade_file), 'r') as f:
+                        nameFile.extend([line.rstrip() for line in f])
+
+                    # here we have a clade's nameFile
+                    # from this we can start to populate the dict_to_populate
+                    for name_line in nameFile:
+                        dict_to_populate[name_line.split('\t')[0]] = len(name_line.split('\t')[1].split(','))
+
+        # At this point we should have been through each of the clade directories for a given sample
+        # next we need to create the sample name to dictionary tuple and add this to the
+        tuple_holding_list.append((sample_name, dict_to_populate))
+    return tuple_holding_list
+
+
 def rarefaction_curve_worker(input_queue, num_bootstraps, result_dict, sampling_frequencies):
 
     for name, working_dict in iter(input_queue.get, 'STOP'):
@@ -3242,7 +3815,7 @@ def rarefaction_curve_worker(input_queue, num_bootstraps, result_dict, sampling_
             except:
                 asdf = 'asdf'
             for i in range(len(pick_array)):
-                sys.stdout.write('\rbootstrap: {}'.format(i))
+                sys.stdout.write('\riteration: {}'.format(i))
                 temp_set.add(pick_array[i])
                 if i in sampling_frequencies:
                     # then we sample the length of the set
@@ -3253,4 +3826,4 @@ def rarefaction_curve_worker(input_queue, num_bootstraps, result_dict, sampling_
         result_dict[name] = sample_boot_result_holder
 
 
-make_venns_all_dates_rel_props_annotated()
+rarefaction_curves_no_MED()
