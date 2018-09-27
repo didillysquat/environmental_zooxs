@@ -5,13 +5,15 @@ import os
 import matplotlib.pyplot as plt
 from matplotlib.pyplot import *
 import matplotlib
-from collections import defaultdict
+from collections import defaultdict, Counter
 import sys
 import statistics
 import itertools
 from matplotlib_venn import venn2, venn3, venn2_circles, venn3_circles
 import numpy as np
 from multiprocessing import Queue, Process, Manager
+from random import shuffle
+from timeit import default_timer as timer
 
 
 def create_diverstiy_figs():
@@ -3779,6 +3781,8 @@ def rarefaction_curves_no_MED_community():
     sp_output_df = sp_output_df.loc[keeper_row_labels]
     info_df = info_df.loc[keeper_row_labels]
 
+    env_type_list = ['coral', 'mucus', 'sea_water', 'sed', 'turf']
+
     # create a dictionary that is sample name to env_type
     sample_name_to_sample_type_dict = {}
     for info_index in info_df.index.values.tolist():
@@ -3800,13 +3804,13 @@ def rarefaction_curves_no_MED_community():
     # get a list of the sampling frequencies that we want to sample over
     sampling_frequencies = []
     additions_list = [0, 0.25, 0.5, 0.75]
-    orders = range(1, 6)
+    orders = range(1, 8)
     for order in orders:
         for addition in additions_list:
             sampling_frequencies.append(int(10 ** (order + addition)))
 
-    if os.path.isfile('result_dict_rarefaction_{}_no_MED.pickle'.format(boot_iterations)):
-        result_dict = pickle.load(open('result_dict_rarefaction_{}_no_MED.pickle'.format(boot_iterations), 'rb'))
+    if os.path.isfile('result_dict_rarefaction_{}_no_MED_community.pickle'.format(boot_iterations)):
+        result_dict = pickle.load(open('result_dict_rarefaction_{}_no_MED_community.pickle'.format(boot_iterations), 'rb'))
         apples = 'asdf'
     else:
 
@@ -3826,11 +3830,32 @@ def rarefaction_curves_no_MED_community():
         # the rest of the script in order to do the actual modelling and plotting of the rarefaction curve
 
         list_of_sample_names_from_indices = sp_output_df.index.values.tolist()
-        tuple_holding_list = create_smp_name_to_dict_tup_list(list_of_sample_names=list_of_sample_names_from_indices)
+        tuple_holding_list = create_smp_name_to_dict_tup_list_community(list_of_sample_names=list_of_sample_names_from_indices)
+
+        # here we can simply rework this tuple list to create a new tuple for each
+        # of the environment types
+        # To make this work we will need to change from working with seq names to the actual sequences
+        # else we won't be able to compare between samples to see if the same sample has been counted in multiple
+        # samples
+        community_level_tup_list = []
+        for index, env_type in enumerate(env_type_list):
+            list_of_env_type_tuples = [tup for tup in tuple_holding_list if sample_name_to_sample_type_dict[tup[0]] == env_type]
+
+            # here we have a list of tups that are of the env_type
+            # https://stackoverflow.com/questions/11011756/is-there-any-pythonic-way-to-combine-two-dicts-adding-values-for-keys-that-appe/11011846
+            counter_holder_env = Counter(dict())
+            for tup in list_of_env_type_tuples:
+                counter_holder_env += Counter(tup[1])
+
+            community_level_tup_list.append((env_type, dict(counter_holder_env)))
+            print('{}: len= {}'.format(env_type, sum([value for value in dict(counter_holder_env).values()])))
+
+        # here we have the community_level_tup_list popualated
+        # and we can now pass this into the below worker and it should still work in the same way
 
         # put each tup into the queue to process
-        for smp_name_to_dict_tup in tuple_holding_list:
-            input_series_queue.put(smp_name_to_dict_tup)
+        for env_type_to_dict_tup in community_level_tup_list:
+            input_series_queue.put(env_type_to_dict_tup)
 
         for i in range(num_proc):
             input_series_queue.put('STOP')
@@ -3845,7 +3870,7 @@ def rarefaction_curves_no_MED_community():
         for p in list_of_processes:
             p.join()
 
-        pickle.dump(dict(result_dict), open('result_dict_rarefaction_{}_no_MED.pickle'.format(boot_iterations), 'wb'))
+        pickle.dump(dict(result_dict), open('result_dict_rarefaction_{}_no_MED_community.pickle'.format(boot_iterations), 'wb'))
 
     # we have our results that we can work with held in the result_dict
     # we should be able to work directly with this dictionary for plotting so lets set this up now
@@ -3867,7 +3892,7 @@ def rarefaction_curves_no_MED_community():
     # axarr[0].set_xscale('log')
 
     axx_ind = 0
-    env_type_list = ['coral', 'mucus', 'sea_water', 'sed', 'turf']
+
 
     # Dict that will hold a list of the averaged series grouped by the sample type
     data_info = defaultdict(list)
@@ -4011,11 +4036,72 @@ def create_smp_name_to_dict_tup_list(list_of_sample_names):
         tuple_holding_list.append((sample_name, dict_to_populate))
     return tuple_holding_list
 
+def create_smp_name_to_dict_tup_list_community(list_of_sample_names):
+    pre_MED_seq_dump_dir = '/Users/humebc/Google Drive/projects/gabi_ITS2/pre_MED_seqs'
+    sample_files = [f for f in os.listdir(pre_MED_seq_dump_dir)]
+    tuple_holding_list = []
+    for smp_f in sample_files:
+
+        # find what the sample name is by parsing through the sample names from the df and finding which one fits in
+        # we will use the count to make sure that only one name fits into the file and is therefore unique.
+        count = 0
+        for smp_index in list_of_sample_names:
+            if smp_index in smp_f.replace('-', '_'):
+                count += 1
+                sample_name = smp_index
+
+        if count > 1:
+            sys.exit('Unique names not found')
+        if count == 0:
+            # then this may be one of the samples that we dropped and we can just continue
+            continue
+        print('Creating abundance dict for sample: {}'.format(sample_name))
+        # now we have the sample name we need to create the dictionary. We can do this easily from the name file
+        # we whould be sure to go through all of the clades and combine these into a single dictionary. At this
+        # point we are just looking for different sequences and it doesn't matter what clade they are from
+
+        # this is the directory that the different clade files will be in.
+        # we will need to go through each of the clade directories for each of the samples and work with the
+        # name file that we find in each one of these
+        pre_MED_wkd = '{}/{}'.format(pre_MED_seq_dump_dir, smp_f)
+
+        sample_clade_dirs = [f for f in os.listdir(pre_MED_wkd)]
+
+        dict_to_populate = {}
+        for clade_dir in sample_clade_dirs:
+            pre_MED_wkd_clade = '{}/{}'.format(pre_MED_wkd, clade_dir)
+            for smp_clade_file in os.listdir(pre_MED_wkd_clade):
+                if '.name' in smp_clade_file:
+                    # then this is the name file we want to be working with
+                    nameFile = []
+                    with open('{}/{}'.format(pre_MED_wkd_clade, smp_clade_file), 'r') as f:
+                        nameFile.extend([line.rstrip() for line in f])
+
+                elif '.fasta' in smp_clade_file:
+                    # then this is the name file we want to be working with
+                    fastaFile = []
+                    with open('{}/{}'.format(pre_MED_wkd_clade, smp_clade_file), 'r') as f:
+                        fastaFile.extend([line.rstrip() for line in f])
+
+            # we need to make a fasta dict from the fasta
+            fasta_dict = {fastaFile[i][1:]: fastaFile[i+1] for i in range(0, len(fastaFile),2)}
+
+            # here we have a clade's nameFile
+            # from this we can start to populate the dict_to_populate
+            for name_line in nameFile:
+                dict_to_populate[fasta_dict[name_line.split('\t')[0]]] = len(name_line.split('\t')[1].split(','))
+
+        # At this point we should have been through each of the clade directories for a given sample
+        # next we need to create the sample name to dictionary tuple and add this to the
+        tuple_holding_list.append((sample_name, dict_to_populate))
+    return tuple_holding_list
+
 
 def rarefaction_curve_worker(input_queue, num_bootstraps, result_dict, sampling_frequencies):
 
     for name, working_dict in iter(input_queue.get, 'STOP'):
-
+        random_time = 0
+        shuffle_time = 0
         sys.stdout.write('\n\nSample: {}'.format(name))
         # for each sample, perform the bootstrapping
 
@@ -4031,21 +4117,26 @@ def rarefaction_curve_worker(input_queue, num_bootstraps, result_dict, sampling_
             sys.stdout.write('\nbootstrap: {}\n'.format(it_num))
             # this is the set that we will populate to count number of unique seqs
             sample_result_holder = []
-            temp_set = set()
-            try:
-                pick_array = np.random.choice(picking_list, len(picking_list), replace=False)
-            except:
-                asdf = 'asdf'
-            for i in range(len(pick_array)):
-                sys.stdout.write('\riteration: {}'.format(i))
-                temp_set.add(pick_array[i])
-                if i in sampling_frequencies:
-                    # then we sample the length of the set
-                    sample_result_holder.append(len(temp_set))
+
+            start = timer()
+            pick_array = np.random.choice(picking_list, len(picking_list), replace=False)
+            end = timer()
+            random_time += end - start
+
+            # start = timer()
+            # shuffle(picking_list)
+            # end = timer()
+            # shuffle_time += end - start
+            # sys.stdout.write('\n shuffle: {}, random: {}\n'.format(shuffle_time, random_time))
+
+            for i in sampling_frequencies:
+                if i < len(picking_list):
+                    sys.stdout.write('\rsampling at: {}'.format(i))
+                    sample_result_holder.append(len(set(picking_list[:i])))
             sample_boot_result_holder.append(sample_result_holder)
 
         # here we have conducted the bootstrapping for one of the samples
         result_dict[name] = sample_boot_result_holder
 
 
-rarefaction_curves_no_MED()
+rarefaction_curves_no_MED_community()
