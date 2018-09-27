@@ -3523,7 +3523,7 @@ def rarefaction_curves():
     plt.savefig('rarefaction_one_third_cutoff.png')
     apples = 'asdf'
 
-def rarefaction_curves_no_MED():
+def rarefaction_curves_no_MED_sample():
     '''I am going to modify this so that we do the same style of rarefaction only working with pre-MED sequences.'''
 
     ''' The purpose of this will be to create a figure that has a rarefaction curve for each of the sample types.
@@ -3633,6 +3633,11 @@ def rarefaction_curves_no_MED():
     # we have our results that we can work with held in the result_dict
     # we should be able to work directly with this dictionary for plotting so lets set this up now
 
+    # I'm going to drop any of the samples that didn't have at least 100 sequences. Given that the 5th sampling
+    # point is at 100 we drop any sample that has less than 5 sampling points
+
+    result_dict = {k:v for k,v in result_dict.items() if len(v[0]) > 4}
+
     colour_dict = {
         'coral': 'orange',
         'sed': 'brown',
@@ -3688,10 +3693,10 @@ def rarefaction_curves_no_MED():
             y_list = env_type_df[col].dropna().tolist()
             x_list = [col for i in range(len(y_list))]
             axarr[axx_ind].scatter(x_list, y_list, marker='.', color=colour_dict[env_type], s=1)
-            axarr[axx_ind].text(x_list[0], max(y_list) + 10, str(len(y_list)), fontsize=8, ha='center')
+            axarr[axx_ind].text(x_list[0], max(y_list) + 50, str(len(y_list)), fontsize=8, ha='center')
 
             # only plot the line point if the number of samples remaining is > 1/3 of the total samples
-            if len(y_list) < num_samples / 3:
+            if len(y_list) < 4:
                 break
             mean_y.append(sum(y_list) / len(y_list))
             mean_x.append(x_list[0])
@@ -3733,8 +3738,225 @@ def rarefaction_curves_no_MED():
     fig.text(0.5, 0.02, 'sampling point log10', ha='center', va='center')
     fig.text(0.06, 0.5, 'unique sequences', ha='center', va='center', rotation='vertical')
     # plt.tight_layout()
-    plt.savefig('rarefaction_one_third_cutoff.svg')
-    plt.savefig('rarefaction_one_third_cutoff.png')
+    plt.savefig('rarefaction_no_MED.svg')
+    plt.savefig('rarefaction_no_MED.png')
+    apples = 'asdf'
+
+def rarefaction_curves_no_MED_community():
+    '''I am going to modify this so that we do the same style of rarefaction only working with pre-MED sequences.'''
+
+    ''' The purpose of this will be to create a figure that has a rarefaction curve for each of the sample types.
+    I'm hoping that this will do an excellent job of mitigating the problem we currently have with regards to the
+    differences in sequences returned from the different environments.
+    We can look up a paper that supports the fact that relatively accurate inference can be made
+    using the begining part of the curve.
+
+    To draw the rarefaction curve we will work on a sample by sample basis. For each sample, we will create a list
+    that contains the resundant seuqnces according to aboslute counts (massive list) and then simply do random
+    selects on this without replacement to get an array of sequences in the pick order. We can then iterate through
+    this picked order and put the seqs into a set. We can then get the len of the set at given interval. the interval
+    vs. the set len will be our coordinates for the plotting. However, we will bootstrap this so we will do the above
+    process per sample maybe 100 times. then for each of the intervals we can get an average. Then for all of the
+    sampes of a given sample type we can average all of the diversity points at each interval and plot this point
+    (maybe we also plot the individual points too). Obviously we will lose points as we work along our intervals.
+    This is fine (and an inherent part of the data which we are precielcy trying to overcome with this rarefaction
+    approach) but we should make the reader aware of this decrease by having an n on the graph. Also error bars would
+    be nice. This may mean that we need to have different subplots for each of the curves though.
+    '''
+
+    # read in the dataframes
+    sp_output_df = pickle.load(open('sp_output_df_all_dates.pickle', 'rb'))
+    QC_info_df = pickle.load(open('QC_info_df_all_dates.pickle', 'rb'))
+    info_df = pickle.load(open('info_df_all_dates.pickle', 'rb'))
+
+    # remove sample P7-G07 as it has no Symbiodinium samples
+    sp_output_df.drop('P7_G07', axis='index', inplace=True)
+    QC_info_df.drop('P7_G07', axis='index', inplace=True)
+    info_df.drop('P7_G07', axis='index', inplace=True)
+
+    # remove samples that don't have any counts in the MED QC columns
+    keeper_row_labels = QC_info_df.index[QC_info_df['post_taxa_id_absolute_symbiodinium_seqs'] != 0]
+    sp_output_df = sp_output_df.loc[keeper_row_labels]
+    info_df = info_df.loc[keeper_row_labels]
+
+    # create a dictionary that is sample name to env_type
+    sample_name_to_sample_type_dict = {}
+    for info_index in info_df.index.values.tolist():
+        if info_df.loc[info_index, 'environ type'] == 'coral':
+            sample_name_to_sample_type_dict[info_index] = 'coral'
+        elif info_df.loc[info_index, 'environ type'] == 'sea_water':
+            sample_name_to_sample_type_dict[info_index] = 'sea_water'
+        elif info_df.loc[info_index, 'environ type'] == 'sed_far':
+            sample_name_to_sample_type_dict[info_index] = 'sed'
+        elif info_df.loc[info_index, 'environ type'] == 'sed_close':
+            sample_name_to_sample_type_dict[info_index] = 'sed'
+        elif info_df.loc[info_index, 'environ type'] == 'mucus':
+            sample_name_to_sample_type_dict[info_index] = 'mucus'
+        elif info_df.loc[info_index, 'environ type'] == 'turf':
+            sample_name_to_sample_type_dict[info_index] = 'turf'
+
+    boot_iterations = 100
+
+    # get a list of the sampling frequencies that we want to sample over
+    sampling_frequencies = []
+    additions_list = [0, 0.25, 0.5, 0.75]
+    orders = range(1, 6)
+    for order in orders:
+        for addition in additions_list:
+            sampling_frequencies.append(int(10 ** (order + addition)))
+
+    if os.path.isfile('result_dict_rarefaction_{}_no_MED.pickle'.format(boot_iterations)):
+        result_dict = pickle.load(open('result_dict_rarefaction_{}_no_MED.pickle'.format(boot_iterations), 'rb'))
+        apples = 'asdf'
+    else:
+
+
+        # we will send one series to be bootstrapped to a core for MPing
+        input_series_queue = Queue()
+
+        num_proc = 7
+
+        manager = Manager()
+        result_dict = manager.dict()
+
+        # for each sample, create a tup that is the sample name and a dictionary
+        # the dictionary should be the a sequence identifier as key and an absolute abundance as value
+        # previously this was done using the sp_output_df. However now we will do this using the pre_MED_seq dump
+        # once we have the sequence data the strucutre defined above we should be able to pass this into the
+        # the rest of the script in order to do the actual modelling and plotting of the rarefaction curve
+
+        list_of_sample_names_from_indices = sp_output_df.index.values.tolist()
+        tuple_holding_list = create_smp_name_to_dict_tup_list(list_of_sample_names=list_of_sample_names_from_indices)
+
+        # put each tup into the queue to process
+        for smp_name_to_dict_tup in tuple_holding_list:
+            input_series_queue.put(smp_name_to_dict_tup)
+
+        for i in range(num_proc):
+            input_series_queue.put('STOP')
+
+        list_of_processes = []
+        for N in range(num_proc):
+            p = Process(target=rarefaction_curve_worker, args=(input_series_queue, boot_iterations,
+                                                               result_dict, sampling_frequencies))
+            list_of_processes.append(p)
+            p.start()
+
+        for p in list_of_processes:
+            p.join()
+
+        pickle.dump(dict(result_dict), open('result_dict_rarefaction_{}_no_MED.pickle'.format(boot_iterations), 'wb'))
+
+    # we have our results that we can work with held in the result_dict
+    # we should be able to work directly with this dictionary for plotting so lets set this up now
+
+    # I'm going to drop any of the samples that didn't have at least 100 sequences. Given that the 5th sampling
+    # point is at 100 we drop any sample that has less than 5 sampling points
+
+    result_dict = {k:v for k,v in result_dict.items() if len(v[0]) > 4}
+
+    colour_dict = {
+        'coral': 'orange',
+        'sed': 'brown',
+        'sea_water': 'blue',
+        'turf': 'green',
+        'mucus': 'gray'}
+
+    fig, axarr = plt.subplots(1, 6, sharey=True, sharex=True, figsize=(10, 6))
+
+    # axarr[0].set_xscale('log')
+
+    axx_ind = 0
+    env_type_list = ['coral', 'mucus', 'sea_water', 'sed', 'turf']
+
+    # Dict that will hold a list of the averaged series grouped by the sample type
+    data_info = defaultdict(list)
+
+    # for each sample workout the means of the bottstraps as a series and add these to the dict
+    for smp in result_dict.keys():
+        env_type_of_smp = sample_name_to_sample_type_dict[smp]
+        temp_df = pd.DataFrame(result_dict[smp])
+        averaged_series = temp_df.mean(axis=0)
+        averaged_series.name = smp
+        data_info[env_type_of_smp].append(averaged_series)
+
+    # here we should have all of the info we need to make a dataframe that can directly be used for plotting for
+    # each of the environmental sample types
+
+    # This will hold the pairs of x, y lists for each of the environment types so that we can plot them all on the
+    # last plot
+    line_holder = []
+    for env_type in env_type_list:
+        try:
+            # env_type_df = pd.DataFrame(data_info[env_type], columns = sampling_frequencies)
+            env_type_df = pd.DataFrame.from_items([(s.name, s) for s in data_info[env_type]]).T
+        except:
+            asdf = 'asdf'
+
+        # here we need to add the columns to the df.
+        # if we had points for all of the sampling frequencies then we can simply use the sampling frequency values
+        # else we need to use a slice of the sampling_frequencies
+        if len(list(env_type_df)) == len(sampling_frequencies):
+            env_type_df.columns = sampling_frequencies
+        else:
+            env_type_df.columns = sampling_frequencies[:len(list(env_type_df))]
+
+        mean_y = []
+        mean_x = []
+        num_samples = len(env_type_df.iloc[:, 0])
+        for col in list(env_type_df):
+            # here plot the individual points (one pont for each of the samples of the env_type that have a point for
+            # this sampling frequency
+            y_list = env_type_df[col].dropna().tolist()
+            x_list = [col for i in range(len(y_list))]
+            axarr[axx_ind].scatter(x_list, y_list, marker='.', color=colour_dict[env_type], s=1)
+            axarr[axx_ind].text(x_list[0], max(y_list) + 50, str(len(y_list)), fontsize=8, ha='center')
+
+            # only plot the line point if the number of samples remaining is > 1/3 of the total samples
+            if len(y_list) < 4:
+                break
+            mean_y.append(sum(y_list) / len(y_list))
+            mean_x.append(x_list[0])
+
+        # now draw the line
+        apples = 'asdf'
+        axarr[axx_ind].plot(mean_x, mean_y, color=colour_dict[env_type])
+        line_holder.append((mean_x, mean_y, colour_dict[env_type]))
+        # plt.show()
+        apples = 'asdf'
+
+        axarr[axx_ind].set_xlabel(env_type)
+        axx_ind += 1
+
+    for tup in line_holder:
+        axarr[5].plot(tup[0], tup[1], color=tup[2])
+        axarr[5].set_xlabel('all')
+
+    # ticks_list = [10 ** i for i in range(6)]
+    # plt.set_xticks = [10 ** i for i in range(2, 6)]
+
+    # NB getting the axes to behave well when logged was tricky but the below link gave a good solution
+
+    axarr[0].set_xscale('log')
+    # formatter = FuncFormatter(log_10_product)
+    # axarr[0].xaxis.set_major_formatter(formatter)
+    # axarr[0].set_xlim(1e-1, 1e5)
+    locmaj = matplotlib.ticker.LogLocator(base=10, numticks=12)
+    axarr[0].xaxis.set_major_locator(locmaj)
+    # axarr[0].set_xticks = [10 ** i for i in range(2, 6)]
+    # axarr[0].set_xticklabels = [10 ** i for i in range(2, 6)]
+    locmin = matplotlib.ticker.LogLocator(base=10.0, subs=(0.2, 0.4, 0.6, 0.8), numticks=12)
+    axarr[0].xaxis.set_minor_locator(locmin)
+    axarr[0].xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
+
+    grid(True)
+    # plt.xlabel('sampling point log10')
+    # plt.ylabel('unique sequences')
+    fig.text(0.5, 0.02, 'sampling point log10', ha='center', va='center')
+    fig.text(0.06, 0.5, 'unique sequences', ha='center', va='center', rotation='vertical')
+    # plt.tight_layout()
+    plt.savefig('rarefaction_no_MED.svg')
+    plt.savefig('rarefaction_no_MED.png')
     apples = 'asdf'
 
 
