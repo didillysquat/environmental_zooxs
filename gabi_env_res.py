@@ -14,7 +14,8 @@ import numpy as np
 from multiprocessing import Queue, Process, Manager
 from random import shuffle
 from timeit import default_timer as timer
-
+import random
+import math
 
 def create_diverstiy_figs():
     ''' This will be the code to create the diversity figure for Gabi's paper.
@@ -4036,8 +4037,8 @@ def create_smp_name_to_dict_tup_list(list_of_sample_names):
         tuple_holding_list.append((sample_name, dict_to_populate))
     return tuple_holding_list
 
-def create_smp_name_to_dict_tup_list_community(list_of_sample_names):
-    pre_MED_seq_dump_dir = '/Users/humebc/Google Drive/projects/gabi_ITS2/pre_MED_seqs'
+def create_smp_name_to_dict_tup_list_community(list_of_sample_names, pre_MED_seq_dump_dir='/Users/humebc/Google Drive/projects/gabi_ITS2/pre_MED_seqs'):
+
     sample_files = [f for f in os.listdir(pre_MED_seq_dump_dir)]
     tuple_holding_list = []
     for smp_f in sample_files:
@@ -4046,7 +4047,7 @@ def create_smp_name_to_dict_tup_list_community(list_of_sample_names):
         # we will use the count to make sure that only one name fits into the file and is therefore unique.
         count = 0
         for smp_index in list_of_sample_names:
-            if smp_index in smp_f.replace('-', '_'):
+            if smp_f.startswith(smp_index) or smp_f.replace('-', '_').startswith(smp_index):
                 count += 1
                 sample_name = smp_index
 
@@ -4082,7 +4083,10 @@ def create_smp_name_to_dict_tup_list_community(list_of_sample_names):
                     fastaFile = []
                     with open('{}/{}'.format(pre_MED_wkd_clade, smp_clade_file), 'r') as f:
                         fastaFile.extend([line.rstrip() for line in f])
-
+                    # now check each of the fastas to make sure that we get rid of the extra 'A' if it is there
+                    for i in range(1, len(fastaFile), 2):
+                        if fastaFile[i].startswith('AATGG'):
+                            fastaFile[i] = fastaFile[i][1:]
             # we need to make a fasta dict from the fasta
             fasta_dict = {fastaFile[i][1:]: fastaFile[i+1] for i in range(0, len(fastaFile),2)}
 
@@ -4139,4 +4143,898 @@ def rarefaction_curve_worker(input_queue, num_bootstraps, result_dict, sampling_
         result_dict[name] = sample_boot_result_holder
 
 
-rarefaction_curves_no_MED_community()
+
+
+def extract_type_profiles():
+    type_abund_df = pd.read_csv('/Users/humebc/Google Drive/projects/gabi_ITS2/taxa_modelling'
+                                '/31_DBV_070918_2018-09-28_02-38-53.092387.profiles.absolute.txt',
+                                sep='\t', lineterminator='\n', index_col=0)
+
+    apples = 'asdf'
+
+    # for each sample, (row) get the id of the maj type for the sample.
+    # add this to a defaulat dict list where type is key and list of samples is list
+    type_to_sample_list_dict = defaultdict(list)
+
+    # create a smp_id to smp_name dict
+    smp_id_to_name_dict = {index_id: type_abund_df.loc[index_id][0] for index_id in type_abund_df.index.values.tolist()[6:-16]}
+
+    for smpl_id in type_abund_df.index.values.tolist()[6:-16]:
+        # get the sample name series cutting off the first value which is the sample name. Convert type to int
+        temp_series = type_abund_df.loc[smpl_id][1:].astype('int')
+        # nonzero_indices = temp_series.nonzero()[0]
+        # if len(nonzero_indices) == 1:
+        # get id of max type
+        max_type_id = temp_series.idxmax()
+        # check that smp has a genuine max type e.g. not 0.
+        max_value = temp_series[max_type_id]
+        if max_value > 0:
+            # add the sample to the type IDs list
+            type_to_sample_list_dict[int(max_type_id)].append((smpl_id))
+
+    # here we can work out which samples we should be looking for co-occuring seqs within for each
+    # of the chosen types
+    # I'm having to cut out the C3-C3gulf types (x2) because the ed sequencing is so low
+    chosen_type_IDs = [10334, 10333, 9733, 9918, 10448, 9504, 10279, 9737, 10322, 10280, 9732, 10421, 10153, 10136]
+
+
+    if os.path.isfile('type_profile_rel_abund_dict_holder_dict.pickle'):
+        type_profile_rel_abund_dict_holder_dict = pickle.load(open('type_profile_rel_abund_dict_holder_dict.pickle', 'rb'))
+    else:
+        pre_MED_seq_dir = '/Users/humebc/Google Drive/projects/gabi_ITS2/taxa_modelling/pre_med_seqs'
+        type_profile_rel_abund_dict_holder_dict = {}
+        for t_id in chosen_type_IDs:
+            # for each of the samples we will need to create a dict that is the sequence as key and the abundance of the sequence as value
+            if t_id == 9737:
+                apples = 'asdf'
+
+            list_of_sample_names = [smp_id_to_name_dict[id] for id in  type_to_sample_list_dict[t_id]]
+            # if t_id == 9918:
+            #     list_of_sample_names = [name for name in list_of_sample_names if name not in ['FS15SE7_FS15SE7_N704-S508', 'FS15SE8_FS15SE8_N705-S508']]
+            if t_id == 9733:
+                list_of_sample_names = [name for name in list_of_sample_names if name not in ['M_16_J0549_28-lost']]
+            list_of_tups = create_smp_name_to_dict_tup_list_community(list_of_sample_names, pre_MED_seq_dump_dir= pre_MED_seq_dir)
+            for tup in list_of_tups:
+                print('{} has {} total sequences'.format(tup[0], sum(list(tup[1].values()))))
+            # here we have a list of tups where key is sample name and value is a dict of seuence to abundance
+            # for starters lets just see what happens if we just keep the sequences that are found in common
+            # across all samples
+
+
+            list_of_list_of_sequences = [list(tup[1].keys()) for tup in list_of_tups]
+
+            common_seqs = set(list_of_list_of_sequences[0])
+
+            print('Getting common seqs for type profile: {}'.format(t_id))
+            for list_of_seqs in list_of_list_of_sequences[1:]:
+                # we've got a little bit of a problem here in that some of the sequences have an extra A at the beginning
+                # of them. They are causing us to find 0 seqs in common. However, it is quite binary
+                # so we can just check and see if we have a total mis match and if so add an A to one of the parties
+                print('Common seqs remaining: {}'.format(len(common_seqs)))
+                common_seqs.intersection_update(list_of_seqs)
+            print('Common seqs remaining: {}'.format(len(common_seqs)))
+            common_seqs = list(common_seqs)
+            # now that we have a list of the sequences that are found in common we should get the average relative
+            # abundance of each of the sequences
+            # Go back through each of the samples and get the relative abundance of each of the sequences
+            # in the common list as a proportion of the other sequences in the common list
+            # Then add these to a list of lists with each list containing the relative abundances for a given
+            # sequence for a given sample
+            relative_abundance_list_holder = [[] for seq in common_seqs]
+            for tup in list_of_tups:
+                smp_dict = tup[1]
+                list_of_seq_absolute_abundances = []
+                for common_seq in common_seqs:
+                    list_of_seq_absolute_abundances.append(smp_dict[common_seq])
+                # here we have the list_of_seq_aboslute_abundances populated
+                # now just work out these abundances as relative abundances and add to the relative_abundance_list_holder
+                tot = sum(list_of_seq_absolute_abundances)
+                for index, common_seq in enumerate(list_of_seq_absolute_abundances):
+                    relative_abundance_list_holder[index].append(common_seq/tot)
+
+            # here we have the relative_abundance_list_holder populated.
+            # we can now get an average of each of the lists and append these with their associated sequences names
+            # to create a dictionary that is essentially our type profile for making the network from
+            # as a sanity check we can also check that the sum of the dictionary values is equal to 1
+            type_profile_dict = {}
+            for index, rel_abund_list in enumerate(relative_abundance_list_holder):
+                type_profile_dict[common_seqs[index]] = sum(rel_abund_list) / len(rel_abund_list)
+
+            print('Relative abundance of type profile sum to: {}'.format(sum(type_profile_dict.values())))
+            type_profile_rel_abund_dict_holder_dict[t_id] = type_profile_dict
+        pickle.dump(type_profile_rel_abund_dict_holder_dict, open('type_profile_rel_abund_dict_holder_dict.pickle', 'wb'))
+
+    # Here we have the type_profile_rel_abund_dict_holder_dict populated with the profiles for each of our types
+    # eventually we will want to graphically represent these using splitstree and networkx but for the time
+    # being we want to do the modelling
+
+    # first we can show that the seqs really do represent the defining seqs rath than just constant background.
+    # if we compare the seqs found between two differnt types and see that the seqs are still high then
+    # this could point towards background being maintained.
+    # equally we should get rid of anysequences that are found in common to get a set of sequences that are truely
+    # defining for each of the types. When we do the graphical representation we can highlight the seqs that we're really identifying
+
+    # first lets get an idea of what kind of overlap we're looking at between the different types
+    for type_tup_one, type_tup_two in itertools.combinations(list(type_profile_rel_abund_dict_holder_dict.items()), 2):
+        # we simply want to see how many of the sequences are found in common, maybe keep an average
+        print('{} and {} have {} seqs in common'.format(type_tup_one[0], type_tup_two[0], len(set(type_tup_one[1].keys()).intersection(set(type_tup_two[1].keys())))))
+
+    type_to_clade_dict = {10334 : 'C',
+                          10333: 'C',
+                          9733: 'C',
+                          9918: 'C',
+                          10448: 'A',
+                          9504: 'A',
+                          10279: 'C',
+                          9737: 'C',
+                          10322: 'C',
+                          10280: 'C',
+                          9732: 'C',
+                          10421: 'D',
+                          10153: 'D',
+                          10136: 'D'
+                          }
+    same_clade = []
+    diff_clade = []
+
+    # this is a default list dict that will be used to hold the sequences that need delteing from a type
+    # the sequences will be delted if they are found in common between two type profiles of the differnt clades
+    # we will only delte the sequene from the type_profile that has it at the lower relative abundance as this is
+    # likely the type profile and clade that it doesn't belong in.
+    seqs_to_delete = defaultdict(list)
+    for type_tup_one, type_tup_two in itertools.combinations(list(type_profile_rel_abund_dict_holder_dict.items()), 2):
+        if type_to_clade_dict[type_tup_one[0]] == type_to_clade_dict[type_tup_two[0]]:
+            same_clade.append(len(set(type_tup_one[1].keys()).intersection(set(type_tup_two[1].keys()))))
+        else:
+            diff_clade.append(len(set(type_tup_one[1].keys()).intersection(set(type_tup_two[1].keys()))))
+            # get list of sequences that are found in common
+            list_of_seqs_in_common_diff_clade = list(set(type_tup_one[1].keys()).intersection(set(type_tup_two[1].keys())))
+            for seq in list_of_seqs_in_common_diff_clade:
+                seq_rel_abund_one = type_tup_one[1][seq]
+                seq_rel_abund_two = type_tup_two[1][seq]
+                if seq_rel_abund_one > seq_rel_abund_two:
+                    if seq not in seqs_to_delete[type_tup_two[0]]:
+                        seqs_to_delete[type_tup_two[0]].append(seq)
+                else:
+                    if seq not in seqs_to_delete[type_tup_one[0]]:
+                        seqs_to_delete[type_tup_one[0]].append(seq)
+
+    print('av same_clade: {}'.format(sum(same_clade)/ len(same_clade)))
+    print('av diff_clade: {}'.format(sum(diff_clade) / len(diff_clade)))
+
+    # delete the sequences that were found in common between the different clade comparisons.
+    # delete the sequence from the type that had the lower abundance of it.
+    for del_tup in seqs_to_delete.items():
+        for seq_to_delete in del_tup[1]:
+            type_id_in_Q = del_tup[0]
+            del type_profile_rel_abund_dict_holder_dict[type_id_in_Q][seq_to_delete]
+
+    # here we have cleaned up type profiles
+    # we have learnt that the high similarity between type profile are likely not due to random background zooxs
+    # being carried through into type profiles as there is high similarity between similar types even from differnt studies
+    # we also show very low similarity between type of different clade in the same studies which would again suggest that it is
+    # a relation of types that gives the higher sequence similarity.
+    # therefore we should believe the type profiles we have.
+
+    # 1 - plot a rarefaction curve for each of the types on a single plot
+    # also plot an eveness score as a product of sequencing depth
+    # if we see that for the single types that the rarefaction curve looks like the turf then we can start to
+    # say that the turf really is low. But if the rarefaction looks way higher then we know we have a problem
+    # this could be a problem in itself.
+
+    # 2 - for each type individually plot eveness as a function of sequencing depth
+    # 3 - for each type individually plot the average seq distance as a function of sequenceing depth
+
+    # 4 then start the mixing: Do completely even and uneven where one predom, one quarter, rest small
+    # do bootstraps on the even which represent just the sampling (i.e. one level of bootstrap)
+    # but for the uneven need to change up which one is uneven, the within this do bootstrapping.
+    # do this for eveness and average seq distance
+
+    # this will show us whether we can use these as predictors.
+
+    # plot_rarefaction_indi(type_profile_rel_abund_dict_holder_dict)
+
+    # 2 - calculate eveness
+    # sampling frequecies
+    # plot_evenness(type_profile_rel_abund_dict_holder_dict)
+
+    # 3 - Caclulate average distance
+
+    # maybe we can leave the distance stuff for a bit and get on to the modelling.
+
+    # make a mix and calculate evenness
+    # we can re use this code
+    # instead of passing in the tuple for each of the type profiles that is id to dictionary
+    # we can pass in tuples that are the mix id and a dictionary.
+    # to get over biases associated with which types are in the mix, we should
+    # pass in a random assortments of 1, 2, etc -->
+    list_of_mix_dictionaries = generate_mix_type_even(type_profile_rel_abund_dict_holder_dict)
+
+
+
+    sampling_frequencies = []
+    additions_list = [0, 0.25, 0.5, 0.75]
+    orders = range(1, 6)
+    for order in orders:
+        for addition in additions_list:
+            sampling_frequencies.append(int(10 ** (order + addition)))
+
+
+    fig, axarr = plt.subplots(1, 4, figsize=(14, 6))
+
+    # GENERATE THE EVENESS DATA for the EVEN distribution
+    output_dict_shared = generate_evennessdata_for_even_distribution(list_of_mix_dictionaries, sampling_frequencies,
+                                                                     type_profile_rel_abund_dict_holder_dict)
+
+    # PLOT Evenness
+
+    colour_dict = plot_evenness_even_dist(axarr, output_dict_shared, sampling_frequencies)
+
+    # GENERATE THE rarefaction data for the even distribution
+    output_dict_shared_even_mix_rarefaction = generate_rarefaction_data_mix_even(list_of_mix_dictionaries,
+                                                                                 sampling_frequencies,
+                                                                                 type_profile_rel_abund_dict_holder_dict)
+
+    plot_rarefaction_mix_even(axarr, colour_dict, output_dict_shared_even_mix_rarefaction, sampling_frequencies)
+
+    plot_rarefaction_mix_even_swap(axarr, colour_dict, output_dict_shared_even_mix_rarefaction, sampling_frequencies)
+
+    # now we can move onto working with the uneven mixes. For this we will need to go back to
+    # we should be able to reuse a lot of code.
+
+    list_of_mix_dictionaries_uneven = generate_mix_type_uneven(type_profile_rel_abund_dict_holder_dict)
+
+
+
+    apples = 'pears'
+
+
+def generate_mix_type_even(type_profile_rel_abund_dict_holder_dict):
+    if os.path.isfile('type_prof_mix_dictionary_list.pickle'):
+        list_of_mix_dictionaries = pickle.load(open('type_prof_mix_dictionary_list.pickle', 'rb'))
+    else:
+        list_of_mix_dictionaries = []
+
+        # first put in the singles
+        for tup in type_profile_rel_abund_dict_holder_dict.items():
+            list_of_mix_dictionaries.append(tup)
+
+        # now do all of the others
+        for i in range(2, len(type_profile_rel_abund_dict_holder_dict.items())):
+            print('\nmaking the {} combo dicts'.format(i))
+            counter = 0
+            for combo in itertools.combinations(type_profile_rel_abund_dict_holder_dict.keys(), i):
+                # create a counter that can hold the overall relative abundances for the combination of dictionaries
+                combo_dict = Counter(dict())
+                for single_dict in combo:
+                    combo_dict += Counter(type_profile_rel_abund_dict_holder_dict[single_dict])
+                # we then need to normalist the dict
+
+                total = sum(combo_dict.values())
+                normalised_dict = {k: v / total for k, v in combo_dict.items()}
+                sys.stout.write('\rnew dict sums to {}'.format(sum(normalised_dict.values())))
+                list_of_mix_dictionaries.append(('{}_{}'.format(i, counter), normalised_dict))
+                counter += 1
+
+        # here we have the list of dictionaries that we want to put into our MP and plot with
+        pickle.dump(list_of_mix_dictionaries, open('type_prof_mix_dictionary_list.pickle', 'wb'))
+    return list_of_mix_dictionaries
+
+def generate_mix_type_uneven(type_profile_rel_abund_dict_holder_dict):
+    if os.path.isfile('type_prof_mix_uneven_dictionary_list.pickle'):
+        list_of_mix_dictionaries = pickle.load(open('type_prof_mix_uneven_dictionary_list.pickle', 'rb'))
+    else:
+        list_of_mix_dictionaries = []
+
+        # first put in the singles
+        # this will still be the same even for the unevens
+        for tup in type_profile_rel_abund_dict_holder_dict.items():
+            list_of_mix_dictionaries.append(tup)
+
+        # now do all of the others
+        for i in range(2, len(type_profile_rel_abund_dict_holder_dict.items())):
+            print('\nmaking the {} combo dicts'.format(i))
+            counter = 0
+            for combo in itertools.combinations(type_profile_rel_abund_dict_holder_dict.keys(), i):
+                # create a counter that can hold the overall relative abundances for the combination of dictionaries
+                combo_dict = Counter(dict())
+                for single_dict in combo:
+                    combo_dict += Counter(type_profile_rel_abund_dict_holder_dict[single_dict])
+                # we then need to normalise the dict
+
+                total = sum(combo_dict.values())
+                normalised_dict = {k: v / total for k, v in combo_dict.items()}
+                sys.stout.write('\rnew dict sums to {}'.format(sum(normalised_dict.values())))
+                list_of_mix_dictionaries.append(('{}_{}'.format(i, counter), normalised_dict))
+                counter += 1
+
+        # here we have the list of dictionaries that we want to put into our MP and plot with
+        pickle.dump(list_of_mix_dictionaries, open('type_prof_mix_uneven_dictionary_list.pickle', 'wb'))
+    return list_of_mix_dictionaries
+
+
+def plot_rarefaction_mix_even(axarr, colour_dict, output_dict_shared_even_mix_rarefaction, sampling_frequencies):
+    # list that will hold the series that will hold the averaged abundances at each bootstrap for each type profile
+    series_holder = []
+    # for each typeprofile workout the means of the bottstraps as a series and add these to the list
+    for type_prof in output_dict_shared_even_mix_rarefaction.keys():
+        temp_df = pd.DataFrame(output_dict_shared_even_mix_rarefaction[type_prof])
+        averaged_series = temp_df.mean(axis=0)
+        averaged_series.name = type_prof
+        series_holder.append(averaged_series)
+    # here we should have all of the info we need to make a dataframe that can directly be used for plotting
+    # This will hold the pairs of x, y lists for each of the environment types so that we can plot them all on the
+    # last plot
+    env_type_df = pd.DataFrame.from_items([(s.name, s) for s in series_holder]).T
+    # here we need to add the columns to the df.
+    # use the sampling frequency values
+    env_type_df.columns = sampling_frequencies
+    # colour_palette_pas = ['#%02x%02x%02x' % rgb_tup for rgb_tup in
+    #                       create_colour_list(mix_col=(255, 255, 255), sq_dist_cutoff=1000,
+    #                                          num_cols=len(list(env_type_df)),
+    #                                          time_out_iterations=10000)]
+    # colour_dict = {col: colour for col, colour in zip(list(env_type_df), colour_palette_pas)}
+    # plot a line for each sampling depth
+    for col in list(env_type_df):
+        x_val_line = []
+        y_val_line = []
+        for num_types in range(1, 14):
+            # get a list of the keys that are for the number of samples num_types
+            if num_types == 1:
+                index_of = [k for k in env_type_df.index.values.tolist() if '_' not in str(k)]
+            else:
+                index_of = [k for k in env_type_df.index.values.tolist() if int(str(k).split('_')[0]) == num_types]
+
+            # here plot the individual points (one pont for each of the samples of the env_type that have a point for
+            # this sampling frequency
+            y_list = [env_type_df.loc[ind][col] for ind in index_of]
+            x_list = [num_types for i in y_list]
+            axarr[1].scatter(x_list, y_list, color=colour_dict[col], marker='.')
+
+            x_val_line.append(num_types)
+            y_val_line.append(statistics.mean(y_list))
+        # now draw the line
+        axarr[1].plot(x_val_line, y_val_line, color=colour_dict[col])
+
+    axarr[1].set_yscale('log')
+
+def plot_rarefaction_mix_even_swap(axarr, colour_dict, output_dict_shared_even_mix_rarefaction, sampling_frequencies):
+    # list that will hold the series that will hold the averaged abundances at each bootstrap for each type profile
+    series_holder = []
+    # for each typeprofile workout the means of the bottstraps as a series and add these to the list
+    for type_prof in output_dict_shared_even_mix_rarefaction.keys():
+        temp_df = pd.DataFrame(output_dict_shared_even_mix_rarefaction[type_prof])
+        averaged_series = temp_df.mean(axis=0)
+        averaged_series.name = type_prof
+        series_holder.append(averaged_series)
+    # here we should have all of the info we need to make a dataframe that can directly be used for plotting
+    # This will hold the pairs of x, y lists for each of the environment types so that we can plot them all on the
+    # last plot
+    env_type_df = pd.DataFrame.from_items([(s.name, s) for s in series_holder]).T
+    # here we need to add the columns to the df.
+    # use the sampling frequency values
+    env_type_df.columns = sampling_frequencies
+    colour_palette_pas = ['#%02x%02x%02x' % rgb_tup for rgb_tup in
+                          create_colour_list(mix_col=(255, 255, 255), sq_dist_cutoff=1000,
+                                             num_cols=len(range(1, 14)),
+                                             time_out_iterations=10000)]
+    colour_dict = {num_types: colour for num_types, colour in zip(range(1, 14), colour_palette_pas)}
+    # plot a line for each sampling depth
+
+    for num_types in range(1, 14):
+        # get a list of the keys that are for the number of samples num_types
+        if num_types == 1:
+            index_of = [k for k in env_type_df.index.values.tolist() if '_' not in str(k)]
+        else:
+            index_of = [k for k in env_type_df.index.values.tolist() if int(str(k).split('_')[0]) == num_types]
+
+        x_val_line = []
+        y_val_line = []
+        for col in list(env_type_df):
+
+            # here plot the individual points (one pont for each of the samples of the env_type that have a point for
+            # this sampling frequency
+            y_list = [env_type_df.loc[ind][col] for ind in index_of]
+            x_list = [col for i in y_list]
+            axarr[2].scatter(x_list, y_list, color=colour_dict[num_types], marker='.')
+
+            x_val_line.append(col)
+            y_val_line.append(statistics.mean(y_list))
+        # now draw the line
+        axarr[2].plot(x_val_line, y_val_line, color=colour_dict[num_types])
+
+    axarr[2].set_xscale('log')
+
+    for num_types in range(1, 14):
+        # get a list of the keys that are for the number of samples num_types
+        if num_types == 1:
+            index_of = [k for k in env_type_df.index.values.tolist() if '_' not in str(k)]
+        else:
+            index_of = [k for k in env_type_df.index.values.tolist() if int(str(k).split('_')[0]) == num_types]
+
+        x_val_line = []
+        y_val_line = []
+        for col in list(env_type_df)[:10]:
+
+            # here plot the individual points (one pont for each of the samples of the env_type that have a point for
+            # this sampling frequency
+            y_list = [env_type_df.loc[ind][col] for ind in index_of]
+            x_list = [col for i in y_list]
+            axarr[3].scatter(x_list, y_list, color=colour_dict[num_types], marker='.')
+
+            x_val_line.append(col)
+            y_val_line.append(statistics.mean(y_list))
+        # now draw the line
+        axarr[3].plot(x_val_line, y_val_line, color=colour_dict[num_types])
+
+    axarr[3].set_xscale('log')
+    apples  = 'asdf'
+
+def generate_rarefaction_data_mix_even(list_of_mix_dictionaries, sampling_frequencies,
+                                       type_profile_rel_abund_dict_holder_dict):
+    if os.path.isfile('type_profile_rarefaction_mix_dict.pickle'):
+        output_dict_shared_even_mix_rarefaction = pickle.load(open('type_profile_rarefaction_mix_dict.pickle', 'rb'))
+    else:
+        # create a dict to put the output in
+        worker_manager = Manager()
+        output_dict_shared_even_mix_rarefaction = worker_manager.dict()
+
+        num_proc = 7
+
+        # put in tups that are the items in the type_profile_rel_abund_dict_holder_dict
+        input = Queue()
+
+        list_of_processes = []
+        # It will be too expensive to process all of the combinations, especially at this early stage.
+        # for the time being lets just roll with 14 mixes for each number of samples
+        # we should also run the same number of bootstraps on each to make the df easier to read.
+        # we can always develop this more if it works out
+        for i in range(1, (len(type_profile_rel_abund_dict_holder_dict.items()))):
+            # get a list of the keys that are for the number of samples i
+            if i == 1:
+                list_of_keys_of = [k[0] for k in list_of_mix_dictionaries if '_' not in str(k[0])]
+            else:
+                list_of_keys_of = [k[0] for k in list_of_mix_dictionaries if int(str(k[0]).split('_')[0]) == i]
+
+            # now we need to pick 14 of these keys randomly
+            picking_list = list(
+                np.random.choice(a=list_of_keys_of, size=len(type_profile_rel_abund_dict_holder_dict.items())))
+
+            # Here we have the list of keys to populate the worker with
+            list_of_tups = [tup for tup in list_of_mix_dictionaries if tup[0] in picking_list]
+
+            for tup in list_of_tups:
+                input.put(tup)
+
+        for i in range(num_proc):
+            input.put('STOP')
+
+        for N in range(num_proc):
+            p = Process(target=rarefaction_curve_worker_indi_type_profile,
+                        args=(input, 10, output_dict_shared_even_mix_rarefaction, sampling_frequencies))
+
+            list_of_processes.append(p)
+
+            p.start()
+
+        for p in list_of_processes:
+            p.join()
+
+        pickle.dump(dict(output_dict_shared_even_mix_rarefaction),
+                    open('type_profile_rarefaction_mix_dict.pickle', 'wb'))
+    return output_dict_shared_even_mix_rarefaction
+
+
+def plot_evenness_even_dist(axarr, output_dict_shared, sampling_frequencies):
+    # list that will hold the series that will hold the averaged abundances at each bootstrap for each type profile
+    series_holder = []
+    # for each typeprofile workout the means of the bottstraps as a series and add these to the list
+    for type_prof in output_dict_shared.keys():
+        temp_df = pd.DataFrame(output_dict_shared[type_prof])
+        averaged_series = temp_df.mean(axis=0)
+        averaged_series.name = type_prof
+        series_holder.append(averaged_series)
+    # here we should have all of the info we need to make a dataframe that can directly be used for plotting
+    # This will hold the pairs of x, y lists for each of the environment types so that we can plot them all on the
+    # last plot
+    env_type_df = pd.DataFrame.from_items([(s.name, s) for s in series_holder]).T
+    # here we need to add the columns to the df.
+    # use the sampling frequency values
+    env_type_df.columns = sampling_frequencies
+    colour_palette_pas = ['#%02x%02x%02x' % rgb_tup for rgb_tup in
+                          create_colour_list(mix_col=(255, 255, 255), sq_dist_cutoff=1000,
+                                             num_cols=len(list(env_type_df)),
+                                             time_out_iterations=10000)]
+    colour_dict = {col: colour for col, colour in zip(list(env_type_df), colour_palette_pas)}
+    # plot a line for each sampling depth
+    for col in list(env_type_df):
+        x_val_line = []
+        y_val_line = []
+        for num_types in range(1, 14):
+            # get a list of the keys that are for the number of samples num_types
+            if num_types == 1:
+                index_of = [k for k in env_type_df.index.values.tolist() if '_' not in str(k)]
+            else:
+                index_of = [k for k in env_type_df.index.values.tolist() if int(str(k).split('_')[0]) == num_types]
+
+            # here plot the individual points (one pont for each of the samples of the env_type that have a point for
+            # this sampling frequency
+            y_list = [env_type_df.loc[ind][col] for ind in index_of]
+            x_list = [num_types for i in y_list]
+            axarr[0].scatter(x_list, y_list, color=colour_dict[col], marker='.')
+
+            x_val_line.append(num_types)
+            y_val_line.append(statistics.mean(y_list))
+        # now draw the line
+        axarr[0].plot(x_val_line, y_val_line, color=colour_dict[col])
+    # axarr[0].set_xscale('log')
+    return colour_dict
+
+
+def generate_evennessdata_for_even_distribution(list_of_mix_dictionaries, sampling_frequencies,
+                                                type_profile_rel_abund_dict_holder_dict):
+    if os.path.isfile('type_profile_evenness_mix_dict.pickle'):
+        output_dict_shared = pickle.load(open('type_profile_evenness_mix_dict.pickle', 'rb'))
+    else:
+        # create a dict to put the output in
+        worker_manager = Manager()
+        output_dict_shared = worker_manager.dict()
+
+        num_proc = 7
+
+        # put in tups that are the items in the type_profile_rel_abund_dict_holder_dict
+        input = Queue()
+
+        list_of_processes = []
+        # It will be too expensive to process all of the combinations, especially at this early stage.
+        # for the time being lets just roll with 14 mixes for each number of samples
+        # we should also run the same number of bootstraps on each to make the df easier to read.
+        # we can always develop this more if it works out
+        for i in range(1, (len(type_profile_rel_abund_dict_holder_dict.items()))):
+            # get a list of the keys that are for the number of samples i
+            if i == 1:
+                list_of_keys_of = [k[0] for k in list_of_mix_dictionaries if '_' not in str(k[0])]
+            else:
+                list_of_keys_of = [k[0] for k in list_of_mix_dictionaries if int(str(k[0]).split('_')[0]) == i]
+
+            # now we need to pick 14 of these keys randomly
+            picking_list = list(
+                np.random.choice(a=list_of_keys_of, size=len(type_profile_rel_abund_dict_holder_dict.items())))
+
+            # Here we have the list of keys to populate the worker with
+            list_of_tups = [tup for tup in list_of_mix_dictionaries if tup[0] in picking_list]
+
+            for tup in list_of_tups:
+                input.put(tup)
+
+        for i in range(num_proc):
+            input.put('STOP')
+
+        for N in range(num_proc):
+            p = Process(target=evenness_worker_indi_type_profile,
+                        args=(input, 10, output_dict_shared, sampling_frequencies))
+
+            list_of_processes.append(p)
+
+            p.start()
+
+        for p in list_of_processes:
+            p.join()
+
+        pickle.dump(dict(output_dict_shared), open('type_profile_evenness_mix_dict.pickle', 'wb'))
+    return output_dict_shared
+
+
+def plot_evenness(type_profile_rel_abund_dict_holder_dict):
+    sampling_frequencies = []
+    additions_list = [0, 0.25, 0.5, 0.75]
+    orders = range(1, 6)
+    for order in orders:
+        for addition in additions_list:
+            sampling_frequencies.append(int(10 ** (order + addition)))
+    if os.path.isfile('type_profile_evenness_dict.pickle'):
+        output_dict_shared = pickle.load(open('type_profile_evenness_dict.pickle', 'rb'))
+    else:
+        # create a dict to put the output in
+        worker_manager = Manager()
+        output_dict_shared = worker_manager.dict()
+
+        num_proc = 7
+
+        # put in tups that are the items in the type_profile_rel_abund_dict_holder_dict
+        input = Queue()
+        for tup in type_profile_rel_abund_dict_holder_dict.items():
+            input.put(tup)
+
+        for i in range(num_proc):
+            input.put('STOP')
+
+        list_of_processes = []
+        for N in range(num_proc):
+            p = Process(target=evenness_worker_indi_type_profile,
+                        args=(input, 100, output_dict_shared, sampling_frequencies))
+            list_of_processes.append(p)
+            p.start()
+
+        for p in list_of_processes:
+            p.join()
+
+        pickle.dump(dict(output_dict_shared), open('type_profile_evenness_dict.pickle', 'wb'))
+    # PLOT Evenness
+    fig, axarr = plt.subplots(1, 3, figsize=(10, 6))
+    # list that will hold the series that will hold the averaged abundances at each bootstrap for each type profile
+    series_holder = []
+    # for each typeprofile workout the means of the bottstraps as a series and add these to the list
+    for type_prof in output_dict_shared.keys():
+        temp_df = pd.DataFrame(output_dict_shared[type_prof])
+        averaged_series = temp_df.mean(axis=0)
+        averaged_series.name = type_prof
+        series_holder.append(averaged_series)
+    # here we should have all of the info we need to make a dataframe that can directly be used for plotting
+    # This will hold the pairs of x, y lists for each of the environment types so that we can plot them all on the
+    # last plot
+    env_type_df = pd.DataFrame.from_items([(s.name, s) for s in series_holder]).T
+    # here we need to add the columns to the df.
+    # use the sampling frequency values
+    env_type_df.columns = sampling_frequencies
+    colour_palette_pas = ['#%02x%02x%02x' % rgb_tup for rgb_tup in
+                          create_colour_list(mix_col=(255, 255, 255), sq_dist_cutoff=1000,
+                                             num_cols=len(list(env_type_df)),
+                                             time_out_iterations=10000)]
+    colour_dict = {type_id: colour for type_id, colour in zip(env_type_df.index.values.tolist(), colour_palette_pas)}
+    # now create a colour dict
+    type_id_list = env_type_df.index.values.tolist()
+    # plot with full sampling, then with only up to 1000
+    for type_id in type_id_list:
+        # here plot the individual points (one pont for each of the samples of the env_type that have a point for
+        # this sampling frequency
+        y_list = env_type_df.loc[type_id].values.tolist()
+        x_list = list(env_type_df)
+
+        # now draw the line
+        axarr[0].plot(x_list, y_list, color=colour_dict[type_id])
+    axarr[0].set_xscale('log')
+
+
+def plot_rarefaction_indi(type_profile_rel_abund_dict_holder_dict):
+    # sampling frequecies
+    sampling_frequencies = []
+    additions_list = [0, 0.25, 0.5, 0.75]
+    orders = range(1, 6)
+    for order in orders:
+        for addition in additions_list:
+            sampling_frequencies.append(int(10 ** (order + addition)))
+    if os.path.isfile('type_profile_rarefaction_dict.pickle'):
+        output_dict_shared = pickle.load(open('type_profile_rarefaction_dict.pickle', 'rb'))
+    else:
+
+        # 1
+
+        # create a dict to put the output in
+        worker_manager = Manager()
+        output_dict_shared = worker_manager.dict()
+
+        num_proc = 7
+
+        # put in tups that are the items in the type_profile_rel_abund_dict_holder_dict
+        input = Queue()
+        for tup in type_profile_rel_abund_dict_holder_dict.items():
+            input.put(tup)
+
+        for i in range(num_proc):
+            input.put('STOP')
+
+        list_of_processes = []
+        for N in range(num_proc):
+            p = Process(target=rarefaction_curve_worker_indi_type_profile,
+                        args=(input, 100, output_dict_shared, sampling_frequencies))
+            list_of_processes.append(p)
+            p.start()
+
+        for p in list_of_processes:
+            p.join()
+
+        pickle.dump(dict(output_dict_shared), open('type_profile_rarefaction_dict.pickle', 'wb'))
+    # PLOT RAREFACTION
+    fig, axarr = plt.subplots(1, 3, figsize=(10, 6))
+    # list that will hold the series that will hold the averaged abundances at each bootstrap for each type profile
+    series_holder = []
+    # for each typeprofile workout the means of the bottstraps as a series and add these to the list
+    for type_prof in output_dict_shared.keys():
+        temp_df = pd.DataFrame(output_dict_shared[type_prof])
+        averaged_series = temp_df.mean(axis=0)
+        averaged_series.name = type_prof
+        series_holder.append(averaged_series)
+    # here we should have all of the info we need to make a dataframe that can directly be used for plotting
+    # This will hold the pairs of x, y lists for each of the environment types so that we can plot them all on the
+    # last plot
+    line_holder = []
+    env_type_df = pd.DataFrame.from_items([(s.name, s) for s in series_holder]).T
+    # here we need to add the columns to the df.
+    # use the sampling frequency values
+    env_type_df.columns = sampling_frequencies
+    colour_palette_pas = ['#%02x%02x%02x' % rgb_tup for rgb_tup in
+                          create_colour_list(mix_col=(255, 255, 255), sq_dist_cutoff=1000,
+                                             num_cols=len(list(env_type_df)),
+                                             time_out_iterations=10000)]
+    colour_dict = {type_id: colour for type_id, colour in zip(env_type_df.index.values.tolist(), colour_palette_pas)}
+    # now create a colour dict
+    type_id_list = env_type_df.index.values.tolist()
+    # plot with full sampling, then with only up to 1000
+    for type_id in type_id_list:
+        # here plot the individual points (one pont for each of the samples of the env_type that have a point for
+        # this sampling frequency
+        y_list = env_type_df.loc[type_id].values.tolist()
+        x_list = list(env_type_df)
+
+        # now draw the line
+        axarr[0].plot(x_list, y_list, color=colour_dict[type_id])
+    axarr[0].set_xscale('log')
+    # plot with full sampling, then with only up to 1000
+    for type_id in type_id_list:
+        # here plot the individual points (one pont for each of the samples of the env_type that have a point for
+        # this sampling frequency
+        y_list = env_type_df.loc[type_id].values.tolist()[:9]
+        x_list = list(env_type_df)[:9]
+
+        # now draw the line
+        axarr[1].plot(x_list, y_list, color=colour_dict[type_id])
+    axarr[1].set_xscale('log')
+    # now make a scatter plot with a regresion line for the 100, 1 000, 10 000 sampling
+    # showing the value vs the known end
+    colour_dict_sampling = {100: 'black', 1000: "grey", 10000: "red"}
+    for sampling in [100, 1000, 10000]:
+        x_list = env_type_df[sampling].values.tolist()
+        y_list = env_type_df[562341].values.tolist()
+        # now draw the line
+        axarr[2].scatter(x_list, y_list, color=colour_dict_sampling[sampling])
+
+
+def rarefaction_curve_worker_indi_type_profile(input_queue, num_bootstraps, result_dict, sampling_frequencies):
+
+    for name, working_dict in iter(input_queue.get, 'STOP'):
+        fixed_dict_tup = list(working_dict.items())
+        sequences = [tup[0] for tup in fixed_dict_tup]
+        probabilities = [tup[1] for tup in fixed_dict_tup]
+        # hardcode check that the probabilities == 1
+        if sum(probabilities) != 1:
+            if sum(probabilities) > 1:
+                probabilities[0] -= sum(probabilities) - 1
+            else:
+                probabilities[0] += 1 - sum(probabilities)
+
+        sys.stdout.write('\n\nType: {}. Probs sum to {}'.format(name, sum(probabilities)))
+        # for each sample, perform the bootstrapping
+
+        # this will hold the lists which will hold the results of a single bool
+        # so this will hold the results of all of the bools
+        sample_boot_result_holder = []
+        for it_num in range(num_bootstraps):
+            sys.stdout.write('\nbootstrap: {}\n'.format(it_num))
+            # this is the set that we will populate to count number of unique seqs
+            sample_result_holder = []
+
+            picking_list = np.random.choice(a=sequences, size=max(sampling_frequencies), p=probabilities)
+
+            for i in sampling_frequencies:
+                sys.stdout.write('\rsampling at: {}'.format(i))
+                sample_result_holder.append(len(set(picking_list[:i])))
+
+            sample_boot_result_holder.append(sample_result_holder)
+
+        # here we have conducted the bootstrapping for one of the samples
+        result_dict[name] = sample_boot_result_holder
+
+def evenness_worker_indi_type_profile(input_queue, num_bootstraps, result_dict, sampling_frequencies):
+
+    for name, working_dict in iter(input_queue.get, 'STOP'):
+        fixed_dict_tup = list(working_dict.items())
+        sequences = [tup[0] for tup in fixed_dict_tup]
+        probabilities = [tup[1] for tup in fixed_dict_tup]
+        # hardcode check that the probabilities == 1
+        if sum(probabilities) != 1:
+            if sum(probabilities) > 1:
+                probabilities[0] -= sum(probabilities) - 1
+            else:
+                probabilities[0] += 1 - sum(probabilities)
+
+        sys.stdout.write('\n\nType: {}. Probs sum to {}'.format(name, sum(probabilities)))
+        # for each sample, perform the bootstrapping
+
+        # this will hold the lists which will hold the results of a single bool
+        # so this will hold the results of all of the bools
+        sample_boot_result_holder = []
+        for it_num in range(num_bootstraps):
+            sys.stdout.write('\nbootstrap: {}\n'.format(it_num))
+            # this is the set that we will populate to count number of unique seqs
+            sample_result_holder = []
+
+            picking_list = np.random.choice(a=sequences, size=max(sampling_frequencies), p=probabilities)
+
+            for i in sampling_frequencies:
+                sys.stdout.write('\rsampling at: {}'.format(i))
+                sample_result_holder.append(calculate_shannons_equitability(picking_list[:i]))
+
+            sample_boot_result_holder.append(sample_result_holder)
+
+        # here we have conducted the bootstrapping for one of the samples
+        result_dict[name] = sample_boot_result_holder
+
+
+
+def create_colour_list(sq_dist_cutoff=None, mix_col=None, num_cols=50, time_out_iterations=10000, avoid_black_and_white=True):
+    new_colours = []
+    min_dist = []
+    attempt = 0
+    while len(new_colours) < num_cols:
+        attempt += 1
+        # Check to see if we have run out of iteration attempts to find a colour that fits into the colour space
+        if attempt > time_out_iterations:
+            sys.exit('Colour generation timed out. We have tried {} iterations of colour generation '
+                     'and have not been able to find a colour that fits into your defined colour space.\n'
+                     'Please lower the number of colours you are trying to find, '
+                     'the minimum distance between them, or both.'.format(attempt))
+        if mix_col:
+            r = int((random.randint(0, 255) + mix_col[0]) /2)
+            g = int((random.randint(0, 255) + mix_col[1]) /2)
+            b = int((random.randint(0, 255) + mix_col[2]) /2)
+        else:
+            r = random.randint(0, 255)
+            g = random.randint(0, 255)
+            b = random.randint(0, 255)
+
+        # now check to see whether the new colour is within a given distance
+        # if the avoids are true also
+        good_dist = True
+        if sq_dist_cutoff:
+            dist_list = []
+            for i in range(len(new_colours)):
+                distance = (new_colours[i][0] - r)**2 + (new_colours[i][1] - g)**2 + (new_colours[i][2] - b)**2
+                dist_list.append(distance)
+                if distance < sq_dist_cutoff:
+                    good_dist = False
+                    break
+            # now check against black and white
+            d_to_black = (r - 0)**2 + (g - 0)**2 + (b - 0)**2
+            d_to_white = (r - 255)**2 + (g - 255)**2 + (b - 255)**2
+            if avoid_black_and_white:
+                if d_to_black < sq_dist_cutoff or d_to_white < sq_dist_cutoff:
+                    good_dist = False
+            if dist_list:
+                min_dist.append(min(dist_list))
+        if good_dist:
+            new_colours.append((r,g,b))
+            attempt = 0
+
+    return new_colours
+
+def calculate_shannons_equitability(list_of_items):
+    ''' This method will take in a list of items. It will calculate the shannon's eveness for this list.
+    To do this it will first create a dictionary that is a counter. It will then use this to do
+    the caluclation.'''
+
+    temp_counting_dict = Counter(list_of_items)
+
+    # convert the counter to a plain old dict
+    temp_counting_dict = dict(temp_counting_dict)
+
+    # get total number of sequences
+    total_number_of_seqs = sum(list(temp_counting_dict.values()))
+
+    # get number of distinct seqs
+    distinct_seqs = len(temp_counting_dict.keys())
+
+    # calculate shannon
+    shannon = 0
+    for val in temp_counting_dict.values():
+        proportion = val/total_number_of_seqs
+        natural_log_of_proportion = math.log(proportion)
+        shannon += proportion * natural_log_of_proportion
+
+    shannon = shannon * -1
+
+    shannons_evenness = shannon / math.log(distinct_seqs)
+
+    return shannons_evenness
+
+extract_type_profiles()
