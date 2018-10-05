@@ -4348,8 +4348,8 @@ def extract_type_profiles():
     # we can pass in tuples that are the mix id and a dictionary.
     # to get over biases associated with which types are in the mix, we should
     # pass in a random assortments of 1, 2, etc -->
-    list_of_mix_dictionaries = generate_mix_type_even(type_profile_rel_abund_dict_holder_dict)
 
+    list_of_mix_dictionaries = generate_mix_type_even(type_profile_rel_abund_dict_holder_dict)
 
 
     sampling_frequencies = []
@@ -4360,32 +4360,48 @@ def extract_type_profiles():
             sampling_frequencies.append(int(10 ** (order + addition)))
 
 
-    fig, axarr = plt.subplots(1, 4, figsize=(14, 6))
-
-    # GENERATE THE EVENESS DATA for the EVEN distribution
-    output_dict_shared = generate_evennessdata_for_even_distribution(list_of_mix_dictionaries, sampling_frequencies,
-                                                                     type_profile_rel_abund_dict_holder_dict)
-
-    # PLOT Evenness
-
+    fig, axarr = plt.subplots(2, 4, figsize=(14, 6))
+    #
+    # # GENERATE THE EVENESS DATA for the EVEN distribution
+    output_dict_shared = dict(generate_evennessdata_for_even_distribution(list_of_mix_dictionaries, sampling_frequencies,
+                                                                     type_profile_rel_abund_dict_holder_dict))
+    #
+    # # PLOT Evenness
+    #
     colour_dict = plot_evenness_even_dist(axarr, output_dict_shared, sampling_frequencies)
-
-    # GENERATE THE rarefaction data for the even distribution
-    output_dict_shared_even_mix_rarefaction = generate_rarefaction_data_mix_even(list_of_mix_dictionaries,
+    #
+    # # GENERATE THE rarefaction data for the even distribution
+    output_dict_shared_even_mix_rarefaction = dict(generate_rarefaction_data_mix_even(list_of_mix_dictionaries,
                                                                                  sampling_frequencies,
-                                                                                 type_profile_rel_abund_dict_holder_dict)
-
+                                                                                 type_profile_rel_abund_dict_holder_dict))
+    #
     plot_rarefaction_mix_even(axarr, colour_dict, output_dict_shared_even_mix_rarefaction, sampling_frequencies)
 
-    plot_rarefaction_mix_even_swap(axarr, colour_dict, output_dict_shared_even_mix_rarefaction, sampling_frequencies)
-
-    # now we can move onto working with the uneven mixes. For this we will need to go back to
-    # we should be able to reuse a lot of code.
+    plot_rarefaction_mix_even_swap(axarr, output_dict_shared_even_mix_rarefaction, sampling_frequencies)
+    #
+    # # now we can move onto working with the uneven mixes. For this we will need to go back to
+    # # we should be able to reuse a lot of code.
 
     list_of_mix_dictionaries_uneven = generate_mix_type_uneven(type_profile_rel_abund_dict_holder_dict)
 
+    # here we have the dictionaries that represent the uneven mixes
+    # we can then plot the same plots as before.
+    # to do this we will need to do the eveness and rarefaction processing
 
+    output_dict_shared_uneven_mix_rarefaction = dict(generate_rarefaction_data_mix_uneven(list_of_mix_dictionaries_uneven,
+                                                                                 sampling_frequencies,
+                                                                                 type_profile_rel_abund_dict_holder_dict))
 
+    output_dict_shared_uneven_mix_evenness = dict(generate_evennessdata_for_uneven_distribution(list_of_mix_dictionaries_uneven, sampling_frequencies,
+                                                                     type_profile_rel_abund_dict_holder_dict))
+
+    colour_dict = plot_evenness_even_dist(axarr, output_dict_shared_uneven_mix_evenness, sampling_frequencies, uneven=True)
+
+    plot_rarefaction_mix_even(axarr, colour_dict, output_dict_shared_uneven_mix_rarefaction, sampling_frequencies, uneven=True)
+
+    plot_rarefaction_mix_even_swap(axarr, output_dict_shared_uneven_mix_rarefaction, sampling_frequencies, uneven=True)
+
+    plt.tight_layout()
     apples = 'pears'
 
 
@@ -4421,6 +4437,13 @@ def generate_mix_type_even(type_profile_rel_abund_dict_holder_dict):
     return list_of_mix_dictionaries
 
 def generate_mix_type_uneven(type_profile_rel_abund_dict_holder_dict):
+    # THis will produce us dicts that represent uneven mixes of Symbiodiniacea taxa
+    # we will use a half life distribution so that relateive distributions are:
+    # 1, 0.5, 0.25, 0.125, 0.0625, bottoming out at 0.0625
+    distribution_list = [1, 0.5, 0.25, 0.125]
+    list_of_low = [0.0625 for i in range(1000)]
+    distribution_list.extend(list_of_low)
+
     if os.path.isfile('type_prof_mix_uneven_dictionary_list.pickle'):
         list_of_mix_dictionaries = pickle.load(open('type_prof_mix_uneven_dictionary_list.pickle', 'rb'))
     else:
@@ -4437,14 +4460,22 @@ def generate_mix_type_uneven(type_profile_rel_abund_dict_holder_dict):
             counter = 0
             for combo in itertools.combinations(type_profile_rel_abund_dict_holder_dict.keys(), i):
                 # create a counter that can hold the overall relative abundances for the combination of dictionaries
+
+                # firstly we should shuffle the combo list
+                combo_shuffled = list(combo)
+                random.shuffle(combo_shuffled)
+
+
                 combo_dict = Counter(dict())
-                for single_dict in combo:
-                    combo_dict += Counter(type_profile_rel_abund_dict_holder_dict[single_dict])
+                for n, single_dict in enumerate(combo_shuffled):
+                    # the dictionary abundances should be adjusted according to the distribution list
+                    adjusted_dict = {k:v*distribution_list[n] for k, v in type_profile_rel_abund_dict_holder_dict[single_dict].items()}
+                    combo_dict += Counter(adjusted_dict)
                 # we then need to normalise the dict
 
                 total = sum(combo_dict.values())
                 normalised_dict = {k: v / total for k, v in combo_dict.items()}
-                sys.stout.write('\rnew dict sums to {}'.format(sum(normalised_dict.values())))
+                sys.stdout.write('\rnew dict sums to {}'.format(sum(normalised_dict.values())))
                 list_of_mix_dictionaries.append(('{}_{}'.format(i, counter), normalised_dict))
                 counter += 1
 
@@ -4453,7 +4484,7 @@ def generate_mix_type_uneven(type_profile_rel_abund_dict_holder_dict):
     return list_of_mix_dictionaries
 
 
-def plot_rarefaction_mix_even(axarr, colour_dict, output_dict_shared_even_mix_rarefaction, sampling_frequencies):
+def plot_rarefaction_mix_even(axarr, colour_dict, output_dict_shared_even_mix_rarefaction, sampling_frequencies, uneven=False):
     # list that will hold the series that will hold the averaged abundances at each bootstrap for each type profile
     series_holder = []
     # for each typeprofile workout the means of the bottstraps as a series and add these to the list
@@ -4489,16 +4520,29 @@ def plot_rarefaction_mix_even(axarr, colour_dict, output_dict_shared_even_mix_ra
             # this sampling frequency
             y_list = [env_type_df.loc[ind][col] for ind in index_of]
             x_list = [num_types for i in y_list]
-            axarr[1].scatter(x_list, y_list, color=colour_dict[col], marker='.')
+            # if uneven:
+            #     axarr[1][1].scatter(x_list, y_list, color=colour_dict[col], marker='.')
+            # else:
+            #     axarr[0][1].scatter(x_list, y_list, color=colour_dict[col], marker='.')
 
             x_val_line.append(num_types)
             y_val_line.append(statistics.mean(y_list))
         # now draw the line
-        axarr[1].plot(x_val_line, y_val_line, color=colour_dict[col])
+        if uneven:
+            axarr[1][1].plot(x_val_line, y_val_line, color=colour_dict[col])
 
-    axarr[1].set_yscale('log')
+        else:
+            axarr[0][1].plot(x_val_line, y_val_line, color=colour_dict[col])
 
-def plot_rarefaction_mix_even_swap(axarr, colour_dict, output_dict_shared_even_mix_rarefaction, sampling_frequencies):
+    if uneven:
+        axarr[1][1].set_yscale('log')
+        axarr[1][1].set_ylabel('distinct sequences')
+        axarr[1][1].set_xlabel('number of taxa')
+    else:
+        axarr[0][1].set_yscale('log')
+        axarr[0][1].set_ylabel('distinct sequences')
+
+def plot_rarefaction_mix_even_swap(axarr, output_dict_shared_even_mix_rarefaction, sampling_frequencies, uneven=False):
     # list that will hold the series that will hold the averaged abundances at each bootstrap for each type profile
     series_holder = []
     # for each typeprofile workout the means of the bottstraps as a series and add these to the list
@@ -4536,14 +4580,26 @@ def plot_rarefaction_mix_even_swap(axarr, colour_dict, output_dict_shared_even_m
             # this sampling frequency
             y_list = [env_type_df.loc[ind][col] for ind in index_of]
             x_list = [col for i in y_list]
-            axarr[2].scatter(x_list, y_list, color=colour_dict[num_types], marker='.')
+            # if uneven:
+            #     axarr[1][2].scatter(x_list, y_list, color=colour_dict[num_types], marker='.')
+            # else:
+            #     axarr[0][2].scatter(x_list, y_list, color=colour_dict[num_types], marker='.')
 
             x_val_line.append(col)
             y_val_line.append(statistics.mean(y_list))
         # now draw the line
-        axarr[2].plot(x_val_line, y_val_line, color=colour_dict[num_types])
+        if uneven:
+            axarr[1][2].plot(x_val_line, y_val_line, color=colour_dict[num_types])
+            axarr[1][2].set_xlabel('sequencing depth')
+        else:
+            axarr[0][2].plot(x_val_line, y_val_line, color=colour_dict[num_types])
 
-    axarr[2].set_xscale('log')
+    if uneven:
+        axarr[1][2].set_xscale('log')
+        axarr[1][2].set_ylabel('distinct sequences')
+    else:
+        axarr[0][2].set_xscale('log')
+        axarr[0][2].set_ylabel('distinct sequences')
 
     for num_types in range(1, 14):
         # get a list of the keys that are for the number of samples num_types
@@ -4560,14 +4616,27 @@ def plot_rarefaction_mix_even_swap(axarr, colour_dict, output_dict_shared_even_m
             # this sampling frequency
             y_list = [env_type_df.loc[ind][col] for ind in index_of]
             x_list = [col for i in y_list]
-            axarr[3].scatter(x_list, y_list, color=colour_dict[num_types], marker='.')
+            # if uneven:
+            #     axarr[1][3].scatter(x_list, y_list, color=colour_dict[num_types], marker='.')
+            # else:
+            #     axarr[0][3].scatter(x_list, y_list, color=colour_dict[num_types], marker='.')
 
             x_val_line.append(col)
             y_val_line.append(statistics.mean(y_list))
         # now draw the line
-        axarr[3].plot(x_val_line, y_val_line, color=colour_dict[num_types])
+        if uneven:
+            axarr[1][3].plot(x_val_line, y_val_line, color=colour_dict[num_types])
 
-    axarr[3].set_xscale('log')
+        else:
+            axarr[0][3].plot(x_val_line, y_val_line, color=colour_dict[num_types])
+
+    if uneven:
+        axarr[1][3].set_xscale('log')
+        axarr[1][3].set_ylabel('distinct sequences')
+        axarr[1][3].set_xlabel('sequencing depth')
+    else:
+        axarr[0][3].set_xscale('log')
+        axarr[0][3].set_ylabel('distinct sequences')
     apples  = 'asdf'
 
 def generate_rarefaction_data_mix_even(list_of_mix_dictionaries, sampling_frequencies,
@@ -4598,7 +4667,7 @@ def generate_rarefaction_data_mix_even(list_of_mix_dictionaries, sampling_freque
 
             # now we need to pick 14 of these keys randomly
             picking_list = list(
-                np.random.choice(a=list_of_keys_of, size=len(type_profile_rel_abund_dict_holder_dict.items())))
+                np.random.choice(a=list_of_keys_of, size=len(type_profile_rel_abund_dict_holder_dict.items()), replace=False))
 
             # Here we have the list of keys to populate the worker with
             list_of_tups = [tup for tup in list_of_mix_dictionaries if tup[0] in picking_list]
@@ -4624,8 +4693,62 @@ def generate_rarefaction_data_mix_even(list_of_mix_dictionaries, sampling_freque
                     open('type_profile_rarefaction_mix_dict.pickle', 'wb'))
     return output_dict_shared_even_mix_rarefaction
 
+def generate_rarefaction_data_mix_uneven(list_of_mix_dictionaries, sampling_frequencies,
+                                       type_profile_rel_abund_dict_holder_dict):
+    if os.path.isfile('type_profile_rarefaction_uneven_mix_dict.pickle'):
+        output_dict_shared_even_mix_rarefaction = pickle.load(open('type_profile_rarefaction_uneven_mix_dict.pickle', 'rb'))
+    else:
+        # create a dict to put the output in
+        worker_manager = Manager()
+        output_dict_shared_even_mix_rarefaction = worker_manager.dict()
 
-def plot_evenness_even_dist(axarr, output_dict_shared, sampling_frequencies):
+        num_proc = 7
+
+        # put in tups that are the items in the type_profile_rel_abund_dict_holder_dict
+        input = Queue()
+
+        list_of_processes = []
+        # It will be too expensive to process all of the combinations, especially at this early stage.
+        # for the time being lets just roll with 14 mixes for each number of samples
+        # we should also run the same number of bootstraps on each to make the df easier to read.
+        # we can always develop this more if it works out
+        for i in range(1, (len(type_profile_rel_abund_dict_holder_dict.items()))):
+            # get a list of the keys that are for the number of samples i
+            if i == 1:
+                list_of_keys_of = [k[0] for k in list_of_mix_dictionaries if '_' not in str(k[0])]
+            else:
+                list_of_keys_of = [k[0] for k in list_of_mix_dictionaries if int(str(k[0]).split('_')[0]) == i]
+
+            # now we need to pick 14 of these keys randomly
+            picking_list = list(
+                np.random.choice(a=list_of_keys_of, size=len(type_profile_rel_abund_dict_holder_dict.items()), replace=False))
+
+            # Here we have the list of keys to populate the worker with
+            list_of_tups = [tup for tup in list_of_mix_dictionaries if tup[0] in picking_list]
+
+            for tup in list_of_tups:
+                input.put(tup)
+
+        for i in range(num_proc):
+            input.put('STOP')
+
+        for N in range(num_proc):
+            p = Process(target=rarefaction_curve_worker_indi_type_profile,
+                        args=(input, 10, output_dict_shared_even_mix_rarefaction, sampling_frequencies))
+
+            list_of_processes.append(p)
+
+            p.start()
+
+        for p in list_of_processes:
+            p.join()
+
+        pickle.dump(dict(output_dict_shared_even_mix_rarefaction),
+                    open('type_profile_rarefaction_uneven_mix_dict.pickle', 'wb'))
+    return output_dict_shared_even_mix_rarefaction
+
+
+def plot_evenness_even_dist(axarr, output_dict_shared, sampling_frequencies, uneven=False):
     # list that will hold the series that will hold the averaged abundances at each bootstrap for each type profile
     series_holder = []
     # for each typeprofile workout the means of the bottstraps as a series and add these to the list
@@ -4661,14 +4784,25 @@ def plot_evenness_even_dist(axarr, output_dict_shared, sampling_frequencies):
             # this sampling frequency
             y_list = [env_type_df.loc[ind][col] for ind in index_of]
             x_list = [num_types for i in y_list]
-            axarr[0].scatter(x_list, y_list, color=colour_dict[col], marker='.')
+            # if uneven:
+            #     axarr[1][0].scatter(x_list, y_list, color=colour_dict[col], marker='.')
+            # else:
+            #     axarr[0][0].scatter(x_list, y_list, color=colour_dict[col], marker='.')
 
             x_val_line.append(num_types)
             y_val_line.append(statistics.mean(y_list))
         # now draw the line
-        axarr[0].plot(x_val_line, y_val_line, color=colour_dict[col])
+        if uneven:
+            axarr[1][0].plot(x_val_line, y_val_line, color=colour_dict[col])
+            axarr[1][0].set_xlabel('number of taxa')
+            axarr[1][0].set_ylabel('corrected Shannon equality')
+        else:
+            axarr[0][0].plot(x_val_line, y_val_line, color=colour_dict[col])
+            axarr[0][0].set_ylabel('corrected Shannon equality')
     # axarr[0].set_xscale('log')
     return colour_dict
+
+
 
 
 def generate_evennessdata_for_even_distribution(list_of_mix_dictionaries, sampling_frequencies,
@@ -4699,7 +4833,7 @@ def generate_evennessdata_for_even_distribution(list_of_mix_dictionaries, sampli
 
             # now we need to pick 14 of these keys randomly
             picking_list = list(
-                np.random.choice(a=list_of_keys_of, size=len(type_profile_rel_abund_dict_holder_dict.items())))
+                np.random.choice(a=list_of_keys_of, size=len(type_profile_rel_abund_dict_holder_dict.items()), replace=False))
 
             # Here we have the list of keys to populate the worker with
             list_of_tups = [tup for tup in list_of_mix_dictionaries if tup[0] in picking_list]
@@ -4722,6 +4856,59 @@ def generate_evennessdata_for_even_distribution(list_of_mix_dictionaries, sampli
             p.join()
 
         pickle.dump(dict(output_dict_shared), open('type_profile_evenness_mix_dict.pickle', 'wb'))
+    return output_dict_shared
+
+def generate_evennessdata_for_uneven_distribution(list_of_mix_dictionaries, sampling_frequencies,
+                                                type_profile_rel_abund_dict_holder_dict):
+    if os.path.isfile('type_profile_evenness_mix_uneven_dict.pickle'):
+        output_dict_shared = pickle.load(open('type_profile_evenness_mix_uneven_dict.pickle', 'rb'))
+    else:
+        # create a dict to put the output in
+        worker_manager = Manager()
+        output_dict_shared = worker_manager.dict()
+
+        num_proc = 7
+
+        # put in tups that are the items in the type_profile_rel_abund_dict_holder_dict
+        input = Queue()
+
+        list_of_processes = []
+        # It will be too expensive to process all of the combinations, especially at this early stage.
+        # for the time being lets just roll with 14 mixes for each number of samples
+        # we should also run the same number of bootstraps on each to make the df easier to read.
+        # we can always develop this more if it works out
+        for i in range(1, (len(type_profile_rel_abund_dict_holder_dict.items()))):
+            # get a list of the keys that are for the number of samples i
+            if i == 1:
+                list_of_keys_of = [k[0] for k in list_of_mix_dictionaries if '_' not in str(k[0])]
+            else:
+                list_of_keys_of = [k[0] for k in list_of_mix_dictionaries if int(str(k[0]).split('_')[0]) == i]
+
+            # now we need to pick 14 of these keys randomly
+            picking_list = list(
+                np.random.choice(a=list_of_keys_of, size=len(type_profile_rel_abund_dict_holder_dict.items()), replace=False))
+
+            # Here we have the list of keys to populate the worker with
+            list_of_tups = [tup for tup in list_of_mix_dictionaries if tup[0] in picking_list]
+
+            for tup in list_of_tups:
+                input.put(tup)
+
+        for i in range(num_proc):
+            input.put('STOP')
+
+        for N in range(num_proc):
+            p = Process(target=evenness_worker_indi_type_profile,
+                        args=(input, 10, output_dict_shared, sampling_frequencies))
+
+            list_of_processes.append(p)
+
+            p.start()
+
+        for p in list_of_processes:
+            p.join()
+
+        pickle.dump(dict(output_dict_shared), open('type_profile_evenness_mix_uneven_dict.pickle', 'wb'))
     return output_dict_shared
 
 
@@ -5038,3 +5225,7 @@ def calculate_shannons_equitability(list_of_items):
     return shannons_evenness
 
 extract_type_profiles()
+
+def generate_median_joining_network_from_dict(seq_abund_dict):
+    ''' The aim of this method will be to generate a network for a set of sequences. To start with this will be
+    passed in as '''
