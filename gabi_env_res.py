@@ -2,7 +2,10 @@ import pandas as pd
 import sys
 import pickle
 import os
+import matplotlib as mpl
+mpl.use('TkAgg')
 import matplotlib.pyplot as plt
+
 from matplotlib.pyplot import *
 import matplotlib
 from collections import defaultdict, Counter
@@ -18,8 +21,7 @@ import random
 import math
 import subprocess
 from plumbum import local
-from Bio import AlignIO
-from Bio.Alphabet import IUPAC
+import networkx as nx
 
 def convert_interleaved_to_sequencial_fasta_two(fasta_in):
     fasta_out = []
@@ -4356,9 +4358,33 @@ def extract_type_profiles():
     # we will pipe off here to test the network creation
     # to start with let's just work with trying to create a network from the first
     # dict
-    for type_id, type_dict in type_profile_rel_abund_dict_holder_dict.items():
-        generate_median_joining_network_from_dict(type_dict)
+    # work out how many subplots we need
+    num_types = len(type_profile_rel_abund_dict_holder_dict.items())
+    for i in range(1, 10):
+        if (i * i) > num_types:
+            sub_plot_square = i
+            break
 
+
+    colour_palette_pas = ['#%02x%02x%02x' % rgb_tup for rgb_tup in
+                          create_colour_list(mix_col=(255, 255, 255), sq_dist_cutoff=1000,
+                                             num_cols=num_types,
+                                             time_out_iterations=10000)]
+    network_colour_dict = {type_id: colour for type_id, colour in zip(type_profile_rel_abund_dict_holder_dict.keys(), colour_palette_pas)}
+
+    f, axarr = plt.subplots(sub_plot_square, sub_plot_square, figsize=(10, 10))
+
+    ax_count = 0
+    for type_id, type_dict  in type_profile_rel_abund_dict_holder_dict.items():
+        # get the ax object that we should be working with
+        print('drawing network for ITS2 type profile {}'.format(type_id))
+        ax = axarr[int(ax_count/sub_plot_square)][ax_count%sub_plot_square]
+
+        splits_tree_out_file, count_id_to_seq_dict = generate_median_joining_network_from_dict(type_dict, type_id)
+        colour_for_network = network_colour_dict[type_id]
+        draw_networkx_network = draw_network(splits_tree_out_file, type_dict, count_id_to_seq_dict, ax, colour_for_network)
+        ax_count += 1
+        apples = 'asdf'
     # here we have cleaned up type profiles
     # we have learnt that the high similarity between type profile are likely not due to random background zooxs
     # being carried through into type profiles as there is high similarity between similar types even from differnt studies
@@ -5276,7 +5302,7 @@ def calculate_shannons_equitability(list_of_items):
 
 
 
-def generate_median_joining_network_from_dict(seq_abund_dict):
+def generate_median_joining_network_from_dict(seq_abund_dict, type_id):
     ''' The aim of this method will be to generate a network for a set of sequences. To start with this will be
     passed in as a dict with sequence as key and abundance as value. We will work with these abundances as relative
     so that the largest is 1 and the smallest will be scaled relative.
@@ -5286,111 +5312,173 @@ def generate_median_joining_network_from_dict(seq_abund_dict):
     3 - put this alignment into splits trees somehow
     4 - transfer this into network x and make a network from it'''
 
+    # it may be best if we pass in a redundant fasta to splits tree as then the actual sizes will be correct
+    # then perhaps we can even draw this ourselves using circles and lines and get the sizes directly from the
+    # splitstree output file
+
     # create a fasta file from the dictionary
-    fasta_to_blast = []
-    count = 0
-    for sequence, abundance in seq_abund_dict.items():
-        fasta_to_blast.extend(['>{}'.format(count), '{}'.format(sequence)])
-        count += 1
-
-    # create a dictionary of name to seq
-    count_id_to_seq_dict = {fasta_to_blast[i][1:] : fasta_to_blast[i+1] for i in range(0, len(fasta_to_blast), 2)}
-
-    writeListToDestination('{}/seqs_to_write.fasta'.format(os.getcwd()), fasta_to_blast)
-
-    # now perform the blast and get a sequence to clade dictionary as a result
-    # now do a blast on these seqs
-    ncbircFile = []
-    db_path = '/Users/humebc/Documents/SymPortal_testing_repo/SymPortal_framework/symbiodiniumDB'
-    ncbircFile.extend(["[BLAST]", "BLASTDB={}".format(db_path)])
-    # write the .ncbirc file that gives the location of the db
-    writeListToDestination('{}/.ncbirc'.format(os.getcwd()), ncbircFile)
-    blastOutputPath = '{}/blast.out'.format(os.getcwd())
-    outputFmt = "6 qseqid sseqid staxids evalue"
-    inputPath = '{}/seqs_to_write.fasta'.format(os.getcwd())
-
-    # Run local blast
-    # completedProcess = subprocess.run([blastnPath, '-out', blastOutputPath, '-outfmt', outputFmt, '-query', inputPath, '-db', 'symbiodinium.fa', '-max_target_seqs', '1', '-num_threads', '1'])
-    completedProcess = subprocess.run(
-        ['blastn', '-out', blastOutputPath, '-outfmt', outputFmt, '-query', inputPath, '-db',
-         'symClade.fa', '-max_target_seqs', '1', '-num_threads', '7'])
-
-    # Read in blast output
-    blast_output_file = readDefinedFileToList(blastOutputPath)
-
-    seq_clade_dict = {}
-    for result_line in blast_output_file:
-        seq_clade_dict[result_line.split('\t')[0]] = result_line.split('\t')[1][-1]
-
-    # get the most common clade
-    clade_counter = defaultdict(int)
-    for value in seq_clade_dict.values():
-        clade_counter[value] += 1
-
-    maj_clade = sorted(clade_counter.items(), key=lambda x: x[1], reverse=True)[0][0]
-
-    # now discard sequences from the dictionary that do not match the maj_clade
-    non_clade_seq_counter = 0
-    for seq, clade in seq_clade_dict.items():
-        if clade != maj_clade:
-            seq_to_del = count_id_to_seq_dict[seq]
-            del seq_abund_dict[seq_to_del]
-            non_clade_seq_counter +=1
-    print('{} sequences deleted'.format(non_clade_seq_counter))
-
-    # now recreate the fasta from the dict with only single clade seqs
-    # create a fasta file from the dictionary
-    fasta_to_align = []
-    count = 0
-    for sequence, abundance in seq_abund_dict.items():
-        fasta_to_align.extend(['>{}'.format(count), '{}'.format(sequence)])
-        count += 1
-
-    # new identifying dict
-    # create a dictionary of name to seq
-    count_id_to_seq_dict = {fasta_to_align[i][1:]: fasta_to_align[i + 1] for i in range(0, len(fasta_to_align), 2)}
-
-    # here we have a cleaned dict that only contains sequences from one clade
-    # now align using mafft
-    # Write out the new fasta
-    infile_path = '{}/temp_type_fasta_for_net_blast.fasta'.format(os.getcwd())
-    writeListToDestination(infile_path, fasta_to_align)
-    # now perform the alignment with MAFFT
-    mafft = local["mafft-linsi"]
-
-    out_file = infile_path.replace('.fasta', '_aligned.fasta')
-    # now run mafft including the redirect
-    (mafft[infile_path] > out_file)()
+    # we will work with a set size of 100000 sequences
 
 
-    aligned_fasta_interleaved = readDefinedFileToList(out_file)
-    aligned_fasta = convert_interleaved_to_sequencial_fasta_two(aligned_fasta_interleaved)
+    if os.path.isfile('{}_splits_tree_out_file.pickle'.format(type_id)) and os.path.isfile('{}_count_id_to_seq_dict.pickle'.format(type_id)):
+        splits_tree_out_file = pickle.load(open('{}_splits_tree_out_file.pickle'.format(type_id), 'rb'))
+        count_id_to_seq_dict = pickle.load(open('{}_count_id_to_seq_dict.pickle'.format(type_id), 'rb'))
 
-    # # Here we have an aligned fasta that we need to work out how to turn into something that will run in splitstree
-    # # first perhaps lets write this out so that we can play with it on the command line
-    # writeListToDestination('{}/infasta_splitstree.fasta'.format(os.getcwd()), aligned_fasta)
-    #
-    # # convert the alignment from fasta to nexus for use in splits trees
-    # with open('{}/infasta_splitstree.fasta'.format(os.getcwd()), 'r') as f:
-    #     alignment = AlignIO.read(f, 'fasta', alphabet=IUPAC.unambiguous_dna)
-    #
-    # #write out in nexus
-    # with open('{}/infasta_splitstree.nex'.format(os.getcwd()), 'w') as f:
-    #     AlignIO.write(alignment, f, 'nexus')
+    else:
 
-    # Unfortunately this is writing out in the old nexus for mat so we will need to make some changes
-    new_nexus = splits_tree_nexus_from_fasta(aligned_fasta)
+        fasta_to_blast = []
+        count = 0
+        for sequence, abundance in seq_abund_dict.items():
+            fasta_to_blast.extend(['>{}'.format(count), '{}'.format(sequence)])
+            count += 1
 
-    # now the nexus is complete and ready for writing out.
-    with open('splitstree_in.nex', 'w') as f:
-        for line in new_nexus:
-            f.write('{}\n'.format(line))
+        # create a dictionary of name to seq
+        count_id_to_seq_dict = {fasta_to_blast[i][1:] : fasta_to_blast[i+1] for i in range(0, len(fasta_to_blast), 2)}
 
-    # now create the control file that we can use for execution
-    cntrl_file = []
+        writeListToDestination('{}/seqs_to_write.fasta'.format(os.getcwd()), fasta_to_blast)
+
+        # now perform the blast and get a sequence to clade dictionary as a result
+        # now do a blast on these seqs
+        ncbircFile = []
+        db_path = '/Users/humebc/Documents/SymPortal_testing_repo/SymPortal_framework/symbiodiniumDB'
+        ncbircFile.extend(["[BLAST]", "BLASTDB={}".format(db_path)])
+        # write the .ncbirc file that gives the location of the db
+        writeListToDestination('{}/.ncbirc'.format(os.getcwd()), ncbircFile)
+        blastOutputPath = '{}/blast.out'.format(os.getcwd())
+        outputFmt = "6 qseqid sseqid staxids evalue"
+        inputPath = '{}/seqs_to_write.fasta'.format(os.getcwd())
+
+        # Run local blast
+        # completedProcess = subprocess.run([blastnPath, '-out', blastOutputPath, '-outfmt', outputFmt, '-query', inputPath, '-db', 'symbiodinium.fa', '-max_target_seqs', '1', '-num_threads', '1'])
+        completedProcess = subprocess.run(
+            ['blastn', '-out', blastOutputPath, '-outfmt', outputFmt, '-query', inputPath, '-db',
+             'symClade.fa', '-max_target_seqs', '1', '-num_threads', '7'])
+
+        # Read in blast output
+        blast_output_file = readDefinedFileToList(blastOutputPath)
+
+        seq_clade_dict = {}
+        for result_line in blast_output_file:
+            seq_clade_dict[result_line.split('\t')[0]] = result_line.split('\t')[1][-1]
+
+        # get the most common clade
+        clade_counter = defaultdict(int)
+        for value in seq_clade_dict.values():
+            clade_counter[value] += 1
+
+        maj_clade = sorted(clade_counter.items(), key=lambda x: x[1], reverse=True)[0][0]
+
+        # now discard sequences from the dictionary that do not match the maj_clade
+        non_clade_seq_counter = 0
+        for seq, clade in seq_clade_dict.items():
+            if clade != maj_clade:
+                seq_to_del = count_id_to_seq_dict[seq]
+                del seq_abund_dict[seq_to_del]
+                non_clade_seq_counter +=1
+        print('{} sequences deleted'.format(non_clade_seq_counter))
+
+        # now recreate the fasta from the dict with only single clade seqs
+        # create a fasta file from the dictionary
+        fasta_to_align = []
+        count = 0
+        for sequence, abundance in seq_abund_dict.items():
+            fasta_to_align.extend(['>{}'.format(count), '{}'.format(sequence)])
+            count += 1
+
+        # new identifying dict
+        # create a dictionary of name to seq
+        count_id_to_seq_dict = {fasta_to_align[i][1:]: fasta_to_align[i + 1] for i in range(0, len(fasta_to_align), 2)}
+
+        # here we have a cleaned dict that only contains sequences from one clade
+        # now align using mafft
+        # Write out the new fasta
+        infile_path = '{}/temp_type_fasta_for_net_blast.fasta'.format(os.getcwd())
+        writeListToDestination(infile_path, fasta_to_align)
+        # now perform the alignment with MAFFT
+        mafft = local["mafft-linsi"]
+
+        out_file = infile_path.replace('.fasta', '_aligned.fasta')
+        # now run mafft including the redirect
+        (mafft[infile_path, '--thread', -1] > out_file)()
 
 
-    apples = 'asdf'
+        aligned_fasta_interleaved = readDefinedFileToList(out_file)
+        aligned_fasta = convert_interleaved_to_sequencial_fasta_two(aligned_fasta_interleaved)
+
+        # # here we have the aligned fasta, we need to get a list of the node sizes
+        # # we can use the cont_id_to_seq_dict to work out the abundances
+        # redundant_fasta = []
+        # new_count = 0
+        # max_abund = 0
+        # min_abund = 999999
+        # for i in range(0, len(aligned_fasta), 2):
+        #     # for each sequence, look up the count id to get the actual sequence, then look up the of that sequence
+        #     # in the seq_abund_dict
+        #     actual_sequence = count_id_to_seq_dict[aligned_fasta[i][1:]]
+        #     prop_abundance = seq_abund_dict[actual_sequence]
+        #     representative_abundance = int(10000*prop_abundance)
+        #     if representative_abundance > max_abund:
+        #         max_abund = representative_abundance
+        #     if representative_abundance < min_abund:
+        #         min_abund = representative_abundance
+        #     for j in range(representative_abundance):
+        #         redundant_fasta.extend(['>{}_{}'.format(type_id, new_count), aligned_fasta[i+1]])
+        #         new_count += 1
+
+        # here we have the redundant fasta which we can use to create the nexus and then the network
+
+        # # Here we have an aligned fasta that we need to work out how to turn into something that will run in splitstree
+        # # first perhaps lets write this out so that we can play with it on the command line
+        # writeListToDestination('{}/infasta_splitstree.fasta'.format(os.getcwd()), aligned_fasta)
+        #
+        # # convert the alignment from fasta to nexus for use in splits trees
+        # with open('{}/infasta_splitstree.fasta'.format(os.getcwd()), 'r') as f:
+        #     alignment = AlignIO.read(f, 'fasta', alphabet=IUPAC.unambiguous_dna)
+        #
+        # #write out in nexus
+        # with open('{}/infasta_splitstree.nex'.format(os.getcwd()), 'w') as f:
+        #     AlignIO.write(alignment, f, 'nexus')
+
+        # Unfortunately this is writing out in the old nexus format so we will need to make some changes
+        new_nexus = splits_tree_nexus_from_fasta(aligned_fasta)
+
+        # now the nexus is complete and ready for writing out.
+        splits_nexus_path = '{}/{}_splitstree_in.nex'.format(os.getcwd(), type_id)
+        with open(splits_nexus_path, 'w') as f:
+            for line in new_nexus:
+                f.write('{}\n'.format(line))
+
+        # now create the control file that we can use for execution
+        splits_out_path = '{}/{}_splitstree_out.nex'.format(os.getcwd(), type_id)
+        ctrl_out_path = '{}/{}_splitstree_ctrl'.format(os.getcwd(), type_id)
+        ctrl_file = []
+        ctrl_file.append('BEGIN SplitsTree;')
+        ctrl_file.append('EXECUTE FILE={};'.format(splits_nexus_path))
+        ctrl_file.append('SAVE FILE={} REPLACE=yes;'.format(splits_out_path))
+        ctrl_file.append('QUIT;')
+        ctrl_file.append('end;')
+
+        # now write out the control file
+        with open(ctrl_out_path, 'w') as f:
+            for line in ctrl_file:
+                f.write('{}\n'.format(line))
+
+
+        # now run splitstree
+        completedProcess = subprocess.run(
+            ['SplitsTree', '-g', '-c', ctrl_out_path])
+
+        # now we can read in the output file
+        # and then we can start making the network finally!
+        with open(splits_out_path, 'r') as f:
+            splits_tree_out_file = [line.rstrip() for line in f]
+
+
+        pickle.dump(splits_tree_out_file, open('{}_splits_tree_out_file.pickle'.format(type_id), 'wb'))
+        pickle.dump(count_id_to_seq_dict, open('{}_count_id_to_seq_dict.pickle'.format(type_id), 'wb'))
+
+    return splits_tree_out_file, count_id_to_seq_dict
+
 
 
 def splits_tree_nexus_from_fasta(aligned_fasta):
@@ -5424,9 +5512,121 @@ def splits_tree_nexus_from_fasta(aligned_fasta):
     # finally write in the st_assumption block that will tell SplitsTree to calculate the network
     new_nexus.append('BEGIN st_assumptions;')
     new_nexus.append(
-        'CHARTRANSFORM=MedianJoining Epsilon=0 SpringEmbedderIterations=10 LabelEdges=false ShowHaplotypes=true SubdivideEdges=false ScaleNodesByTaxa=true;')
+        'CHARTRANSFORM=MedianJoining Epsilon=0 SpringEmbedderIterations=1000 LabelEdges=false ShowHaplotypes=false SubdivideEdges=false ScaleNodesByTaxa=true;')
     new_nexus.append('end;')
     return new_nexus
+
+def draw_network(splits_tree_out_file, type_dict, count_id_to_seq_dict, ax, colour_for_network):
+    # networkx graph object
+    g = nx.Graph()
+
+
+
+    # we can work with a minimised version of the splits out file that is only the network block
+    for i in range(len(splits_tree_out_file)):
+        if splits_tree_out_file[i] == 'BEGIN Network;':
+            network_block = splits_tree_out_file[i:]
+            break
+
+    # here we can now work with the network_block rather than the larger splits_tree_out_file
+    # get a list of the nodes
+    # these can be got from the splits_tree_outfile
+    # we should use the numbered system that the splits tree is using. We can get a list of the different sequences
+    # that each of the taxa represent form the translate part of the network block.
+    # This way we can use this to run the sequences against SP to get the names of the sequencs
+    # we can also make the 'translation dictionary' at the same time
+    vertice_id_to_seq_id_dict = defaultdict(list)
+    for i in range(len(network_block)):
+        if network_block[i] == 'TRANSLATE':
+            # for each line in the translate section
+            for j in range(i + 1, len(network_block)):
+                if network_block[j] == ';':
+                    # then we have reached the end of the translation section
+                    break
+                items = network_block[j].replace('\'', '').replace(',', '').split(' ')
+                vertice_id_to_seq_id_dict[items[0]].extend(items[1:])
+
+    vertices = list(vertice_id_to_seq_id_dict.keys())
+
+    # here we will use the dictionary that was created in the previous method (passed into this one)
+    # to link the count id to the actual sequence, which can then be used to look up the abundance
+    # This way we can have a vertice_id_to_rel_abund dict that we can use to put a size to the nodes
+
+    vertice_id_to_rel_abund_dict = {}
+    for vert_id in vertices:
+        count_id_list = vertice_id_to_seq_id_dict[vert_id]
+        if len(count_id_list) == 1:
+            sequence = count_id_to_seq_dict[count_id_list[0]]
+            rel_abund = type_dict[sequence]
+            vertice_id_to_rel_abund_dict[vert_id] = rel_abund
+        elif len(count_id_list) > 1:
+            # then we need sum the abundances for each of them
+            tot = 0
+            for count_id in count_id_list:
+                sequence = count_id_to_seq_dict[count_id_list[0]]
+                rel_abund = type_dict[sequence]
+                tot += rel_abund
+            vertice_id_to_rel_abund_dict[vert_id] = tot
+
+
+    # the sizes are a little tricky to work out becauase I'm not acutally sure what the units are, possibly pixels
+    # lets work where if there was only 1 sequence it would be a size of 1000
+    # therefore each vertice will be a node size that is the re_abund * 1000
+    # NB the size does appear to be something similar to pixels
+    vertices_sizes = [int(vertice_id_to_rel_abund_dict[vert] * 1000) for vert in vertices]
+    vert_max = max(vertices_sizes)
+    vert_min = min(vertices_sizes)
+    # the edge list should be a list of tuples
+    # currently we are not taking into account the length of the vertices
+    edges_list = []
+    for i in range(len(network_block)):
+        if network_block[i] == 'EDGES':
+            # for each line in the translate section
+            for j in range(i + 1, len(network_block)):
+                if network_block[j] == ';':
+                    # then we have reached the end of the translation section
+                    break
+                items = network_block[j].replace(',', '').split(' ')[1:]
+                edges_list.append((items[0], items[1]))
+
+    # THis is useful, scroll down to where the 'def draw_networkx(......' is
+    # https://networkx.github.io/documentation/networkx-1.9/_modules/networkx/drawing/nx_pylab.html#draw_networkx
+
+
+    # here we have an edges list
+
+    g.add_nodes_from(vertices)
+    g.add_edges_from(edges_list)
+    # we should be able to
+    # f, ax = plt.subplots(1, 1)
+    # we will need to set the limits dynamically as we don't know what the positions are going to be.
+    # I think we will want to have the x and y limits the same so that we end up with a square
+    # we will therefore just look for the bigest and smallest values, add a buffer and then set the
+    # axes limits to thsee
+    spring_pos = nx.spring_layout(g)
+    max_ax_val = 0
+    min_ax_val = 9999
+    for vert_pos_array in spring_pos.values():
+        for ind in vert_pos_array:
+            if ind > max_ax_val:
+                max_ax_val = ind
+            if ind < min_ax_val:
+                min_ax_val = ind
+
+    ax.set_ylim(min_ax_val - 0.2, max_ax_val + 0.2)
+    ax.set_xlim(min_ax_val - 0.2, max_ax_val + 0.2)
+    # to set the edge colour of the nodes we need to draw them seperately
+    # nx.draw_networkx_nodes(g, pos=spring_pos, node_size=vertices_sizes, with_labels=False, alpha=0.5, edgecolors='black')
+    drawn = nx.draw_networkx(g, pos=spring_pos, arrows=False, ax=ax, node_color=colour_for_network, alpha=1.0, node_size=vertices_sizes, with_labels=False )
+
+    # https://stackoverflow.com/questions/22716161/how-can-one-modify-the-outline-color-of-a-node-in-networkx
+    #https://matplotlib.org/api/collections_api.html
+    ax.collections[0].set_edgecolor('grey')
+    ax.collections[0].set_linewidth(0.5)
+    ax.collections[1].set_linewidth(0.5)
+    ax.set_axis_off()
+
+    apples = 'asdf'
 
 
 extract_type_profiles()
