@@ -16,6 +16,49 @@ from random import shuffle
 from timeit import default_timer as timer
 import random
 import math
+import subprocess
+from plumbum import local
+from Bio import AlignIO
+from Bio.Alphabet import IUPAC
+
+def convert_interleaved_to_sequencial_fasta_two(fasta_in):
+    fasta_out = []
+    for i in range(len(fasta_in)):
+        if fasta_in[i].startswith('>'):
+            if fasta_out:
+                # if the fasta is not empty then this is not the first
+                fasta_out.append(temp_seq_str)
+            #else then this is the first sequence and there is no need to add the seq.
+            temp_seq_str = ''
+            fasta_out.append(fasta_in[i])
+        else:
+            temp_seq_str = temp_seq_str + fasta_in[i]
+    #finally we need to add in the last sequence
+    fasta_out.append(temp_seq_str)
+    return fasta_out
+
+
+def writeListToDestination(destination, listToWrite):
+    # print('Writing list to ' + destination)
+    try:
+        os.makedirs(os.path.dirname(destination))
+    except FileExistsError:
+        pass
+
+    with open(destination, mode='w') as writer:
+        i = 0
+        while i < len(listToWrite):
+            if i != len(listToWrite) - 1:
+                writer.write(listToWrite[i] + '\n')
+            elif i == len(listToWrite) - 1:
+                writer.write(listToWrite[i])
+            i += 1
+
+def readDefinedFileToList(filename):
+    temp_list = []
+    with open(filename, mode='r') as reader:
+        temp_list = [line.rstrip() for line in reader]
+    return temp_list
 
 def create_diverstiy_figs():
     ''' This will be the code to create the diversity figure for Gabi's paper.
@@ -3987,7 +4030,7 @@ def rarefaction_curves_no_MED_community():
 
 
 def create_smp_name_to_dict_tup_list(list_of_sample_names):
-    pre_MED_seq_dump_dir = '/Users/humebc/Google Drive/projects/gabi_ITS2/pre_MED_seqs'
+    pre_MED_seq_dump_dir = '/Users/humebc/Google_Drive/projects/gabi_ITS2/pre_MED_seqs'
     sample_files = [f for f in os.listdir(pre_MED_seq_dump_dir)]
     tuple_holding_list = []
     for smp_f in sample_files:
@@ -4037,7 +4080,7 @@ def create_smp_name_to_dict_tup_list(list_of_sample_names):
         tuple_holding_list.append((sample_name, dict_to_populate))
     return tuple_holding_list
 
-def create_smp_name_to_dict_tup_list_community(list_of_sample_names, pre_MED_seq_dump_dir='/Users/humebc/Google Drive/projects/gabi_ITS2/pre_MED_seqs'):
+def create_smp_name_to_dict_tup_list_community(list_of_sample_names, pre_MED_seq_dump_dir='/Users/humebc/Google_Drive/projects/gabi_ITS2/pre_MED_seqs'):
 
     sample_files = [f for f in os.listdir(pre_MED_seq_dump_dir)]
     tuple_holding_list = []
@@ -4146,7 +4189,7 @@ def rarefaction_curve_worker(input_queue, num_bootstraps, result_dict, sampling_
 
 
 def extract_type_profiles():
-    type_abund_df = pd.read_csv('/Users/humebc/Google Drive/projects/gabi_ITS2/taxa_modelling'
+    type_abund_df = pd.read_csv('/Users/humebc/Google_Drive/projects/gabi_ITS2/taxa_modelling'
                                 '/31_DBV_070918_2018-09-28_02-38-53.092387.profiles.absolute.txt',
                                 sep='\t', lineterminator='\n', index_col=0)
 
@@ -4181,7 +4224,7 @@ def extract_type_profiles():
     if os.path.isfile('type_profile_rel_abund_dict_holder_dict.pickle'):
         type_profile_rel_abund_dict_holder_dict = pickle.load(open('type_profile_rel_abund_dict_holder_dict.pickle', 'rb'))
     else:
-        pre_MED_seq_dir = '/Users/humebc/Google Drive/projects/gabi_ITS2/taxa_modelling/pre_med_seqs'
+        pre_MED_seq_dir = '/Users/humebc/Google_Drive/projects/gabi_ITS2/taxa_modelling/pre_med_seqs'
         type_profile_rel_abund_dict_holder_dict = {}
         for t_id in chosen_type_IDs:
             # for each of the samples we will need to create a dict that is the sequence as key and the abundance of the sequence as value
@@ -4308,6 +4351,13 @@ def extract_type_profiles():
         for seq_to_delete in del_tup[1]:
             type_id_in_Q = del_tup[0]
             del type_profile_rel_abund_dict_holder_dict[type_id_in_Q][seq_to_delete]
+
+
+    # we will pipe off here to test the network creation
+    # to start with let's just work with trying to create a network from the first
+    # dict
+    for type_id, type_dict in type_profile_rel_abund_dict_holder_dict.items():
+        generate_median_joining_network_from_dict(type_dict)
 
     # here we have cleaned up type profiles
     # we have learnt that the high similarity between type profile are likely not due to random background zooxs
@@ -5224,8 +5274,159 @@ def calculate_shannons_equitability(list_of_items):
 
     return shannons_evenness
 
-extract_type_profiles()
+
 
 def generate_median_joining_network_from_dict(seq_abund_dict):
     ''' The aim of this method will be to generate a network for a set of sequences. To start with this will be
-    passed in as '''
+    passed in as a dict with sequence as key and abundance as value. We will work with these abundances as relative
+    so that the largest is 1 and the smallest will be scaled relative.
+    1 - Blast the sequences against a clade db to get clade. Infer the major clade of the type profile
+    then dicard sequeneces that are not from the same clade.
+    2 - produce an alignment of the sequences
+    3 - put this alignment into splits trees somehow
+    4 - transfer this into network x and make a network from it'''
+
+    # create a fasta file from the dictionary
+    fasta_to_blast = []
+    count = 0
+    for sequence, abundance in seq_abund_dict.items():
+        fasta_to_blast.extend(['>{}'.format(count), '{}'.format(sequence)])
+        count += 1
+
+    # create a dictionary of name to seq
+    count_id_to_seq_dict = {fasta_to_blast[i][1:] : fasta_to_blast[i+1] for i in range(0, len(fasta_to_blast), 2)}
+
+    writeListToDestination('{}/seqs_to_write.fasta'.format(os.getcwd()), fasta_to_blast)
+
+    # now perform the blast and get a sequence to clade dictionary as a result
+    # now do a blast on these seqs
+    ncbircFile = []
+    db_path = '/Users/humebc/Documents/SymPortal_testing_repo/SymPortal_framework/symbiodiniumDB'
+    ncbircFile.extend(["[BLAST]", "BLASTDB={}".format(db_path)])
+    # write the .ncbirc file that gives the location of the db
+    writeListToDestination('{}/.ncbirc'.format(os.getcwd()), ncbircFile)
+    blastOutputPath = '{}/blast.out'.format(os.getcwd())
+    outputFmt = "6 qseqid sseqid staxids evalue"
+    inputPath = '{}/seqs_to_write.fasta'.format(os.getcwd())
+
+    # Run local blast
+    # completedProcess = subprocess.run([blastnPath, '-out', blastOutputPath, '-outfmt', outputFmt, '-query', inputPath, '-db', 'symbiodinium.fa', '-max_target_seqs', '1', '-num_threads', '1'])
+    completedProcess = subprocess.run(
+        ['blastn', '-out', blastOutputPath, '-outfmt', outputFmt, '-query', inputPath, '-db',
+         'symClade.fa', '-max_target_seqs', '1', '-num_threads', '7'])
+
+    # Read in blast output
+    blast_output_file = readDefinedFileToList(blastOutputPath)
+
+    seq_clade_dict = {}
+    for result_line in blast_output_file:
+        seq_clade_dict[result_line.split('\t')[0]] = result_line.split('\t')[1][-1]
+
+    # get the most common clade
+    clade_counter = defaultdict(int)
+    for value in seq_clade_dict.values():
+        clade_counter[value] += 1
+
+    maj_clade = sorted(clade_counter.items(), key=lambda x: x[1], reverse=True)[0][0]
+
+    # now discard sequences from the dictionary that do not match the maj_clade
+    non_clade_seq_counter = 0
+    for seq, clade in seq_clade_dict.items():
+        if clade != maj_clade:
+            seq_to_del = count_id_to_seq_dict[seq]
+            del seq_abund_dict[seq_to_del]
+            non_clade_seq_counter +=1
+    print('{} sequences deleted'.format(non_clade_seq_counter))
+
+    # now recreate the fasta from the dict with only single clade seqs
+    # create a fasta file from the dictionary
+    fasta_to_align = []
+    count = 0
+    for sequence, abundance in seq_abund_dict.items():
+        fasta_to_align.extend(['>{}'.format(count), '{}'.format(sequence)])
+        count += 1
+
+    # new identifying dict
+    # create a dictionary of name to seq
+    count_id_to_seq_dict = {fasta_to_align[i][1:]: fasta_to_align[i + 1] for i in range(0, len(fasta_to_align), 2)}
+
+    # here we have a cleaned dict that only contains sequences from one clade
+    # now align using mafft
+    # Write out the new fasta
+    infile_path = '{}/temp_type_fasta_for_net_blast.fasta'.format(os.getcwd())
+    writeListToDestination(infile_path, fasta_to_align)
+    # now perform the alignment with MAFFT
+    mafft = local["mafft-linsi"]
+
+    out_file = infile_path.replace('.fasta', '_aligned.fasta')
+    # now run mafft including the redirect
+    (mafft[infile_path] > out_file)()
+
+
+    aligned_fasta_interleaved = readDefinedFileToList(out_file)
+    aligned_fasta = convert_interleaved_to_sequencial_fasta_two(aligned_fasta_interleaved)
+
+    # # Here we have an aligned fasta that we need to work out how to turn into something that will run in splitstree
+    # # first perhaps lets write this out so that we can play with it on the command line
+    # writeListToDestination('{}/infasta_splitstree.fasta'.format(os.getcwd()), aligned_fasta)
+    #
+    # # convert the alignment from fasta to nexus for use in splits trees
+    # with open('{}/infasta_splitstree.fasta'.format(os.getcwd()), 'r') as f:
+    #     alignment = AlignIO.read(f, 'fasta', alphabet=IUPAC.unambiguous_dna)
+    #
+    # #write out in nexus
+    # with open('{}/infasta_splitstree.nex'.format(os.getcwd()), 'w') as f:
+    #     AlignIO.write(alignment, f, 'nexus')
+
+    # Unfortunately this is writing out in the old nexus for mat so we will need to make some changes
+    new_nexus = splits_tree_nexus_from_fasta(aligned_fasta)
+
+    # now the nexus is complete and ready for writing out.
+    with open('splitstree_in.nex', 'w') as f:
+        for line in new_nexus:
+            f.write('{}\n'.format(line))
+
+    # now create the control file that we can use for execution
+    cntrl_file = []
+
+
+    apples = 'asdf'
+
+
+def splits_tree_nexus_from_fasta(aligned_fasta):
+    new_nexus = []
+    new_nexus.append('#NEXUS')
+    new_nexus.append('BEGIN taxa;')
+    new_nexus.append('\tDIMENSIONS ntax={};'.format(int(len(aligned_fasta) / 2)))
+    new_nexus.append('TAXLABELS')
+    count = 1
+    for i in range(0, len(aligned_fasta), 2):
+        new_nexus.append('[{}]\t{}'.format(count, aligned_fasta[i][1:]))
+        count += 1
+    new_nexus.append(';')
+    new_nexus.append('END;')
+    new_nexus.append('BEGIN characters;')
+    new_nexus.append('\tDIMENSIONS nchar={};'.format(len(aligned_fasta[1])))
+    new_nexus.append('\tFORMAT')
+    new_nexus.append('\t\tdatatype=DNA')
+    new_nexus.append('\t\tmissing=?')
+    new_nexus.append('\t\tgap=-')
+    new_nexus.append('\t\tsymbols="A C G T"')
+    new_nexus.append('\t\tlabels=left')
+    new_nexus.append('\t\tinterleave=no')
+    new_nexus.append('\t;')
+    new_nexus.append('MATRIX')
+    # now put in the sequences in the style of the mammals.nex example from SplitsTree
+    for i in range(0, len(aligned_fasta), 2):
+        new_nexus.append('{}\t{}'.format(aligned_fasta[i][1:], aligned_fasta[i + 1].upper()))
+    new_nexus.append(';')
+    new_nexus.append('END;')
+    # finally write in the st_assumption block that will tell SplitsTree to calculate the network
+    new_nexus.append('BEGIN st_assumptions;')
+    new_nexus.append(
+        'CHARTRANSFORM=MedianJoining Epsilon=0 SpringEmbedderIterations=10 LabelEdges=false ShowHaplotypes=true SubdivideEdges=false ScaleNodesByTaxa=true;')
+    new_nexus.append('end;')
+    return new_nexus
+
+
+extract_type_profiles()
