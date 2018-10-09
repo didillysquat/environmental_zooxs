@@ -4191,9 +4191,14 @@ def rarefaction_curve_worker(input_queue, num_bootstraps, result_dict, sampling_
 
 
 def extract_type_profiles():
-    type_abund_df = pd.read_csv('/Users/humebc/Google_Drive/projects/gabi_ITS2/taxa_modelling'
-                                '/31_DBV_070918_2018-09-28_02-38-53.092387.profiles.absolute.txt',
-                                sep='\t', lineterminator='\n', index_col=0)
+    if os.path.isfile('/Users/humebc/Google_Drive/projects/gabi_ITS2/taxa_modelling//31_DBV_070918_2018-09-28_02-38-53.092387.profiles.absolute.txt')
+        type_abund_df = pd.read_csv('/Users/humebc/Google_Drive/projects/gabi_ITS2/taxa_modelling'
+                                    '/31_DBV_070918_2018-09-28_02-38-53.092387.profiles.absolute.txt',
+                                    sep='\t', lineterminator='\n', index_col=0)
+    else:
+        # then we are working on the remote server
+        type_abund_df = pd.read_csv('{}/31_DBV_070918_2018-09-28_02-38-53.092387.profiles.absolute.txt'.format(os.getcwd()),
+                                    sep='\t', lineterminator='\n', index_col=0)
 
     apples = 'asdf'
 
@@ -5340,7 +5345,11 @@ def generate_median_joining_network_from_dict(seq_abund_dict, type_id):
         # now perform the blast and get a sequence to clade dictionary as a result
         # now do a blast on these seqs
         ncbircFile = []
-        db_path = '/Users/humebc/Documents/SymPortal_testing_repo/SymPortal_framework/symbiodiniumDB'
+        if os.path.isdir('/Users/humebc/Documents/SymPortal_testing_repo/SymPortal_framework/symbiodiniumDB'):
+            db_path = '/Users/humebc/Documents/SymPortal_testing_repo/SymPortal_framework/symbiodiniumDB'
+        else:
+            # if we are on the remote server
+            db_path = '/home/humebc/phylogeneticSoftware/SymPortal_framework/symbiodiniumDB'
         ncbircFile.extend(["[BLAST]", "BLASTDB={}".format(db_path)])
         # write the .ncbirc file that gives the location of the db
         writeListToDestination('{}/.ncbirc'.format(os.getcwd()), ncbircFile)
