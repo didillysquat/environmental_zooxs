@@ -3416,8 +3416,7 @@ def draw_network(splits_tree_out_file, count_id_to_abund_dict, ax, colour_for_ne
     # therefore each vertice will be a node size that is the re_abund * 1000
     # NB the size does appear to be something similar to pixels
     vertices_sizes = [int(vertice_id_to_rel_abund_dict[vert] * 1000) for vert in vertices]
-    vert_max = max(vertices_sizes)
-    vert_min = min(vertices_sizes)
+
     # the edge list should be a list of tuples
     # currently we are not taking into account the length of the vertices
     edges_list = []
