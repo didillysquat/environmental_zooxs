@@ -1915,7 +1915,7 @@ def draw_individual_type_networks(type_profile_rel_abund_dict_holder_dict):
     # to start with let's just work with trying to create a network from the first
     # dict
     # work out how many subplots we need
-    num_types = len(type_profile_rel_abund_dict_holder_dict.items())
+    num_types = len(type_profile_rel_abund_dict_holder_dict.items()) * 2
     for i in range(1, 10):
         if (i * i) > num_types:
             sub_plot_square = i
