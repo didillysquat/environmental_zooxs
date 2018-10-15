@@ -1806,6 +1806,48 @@ def model_its_type_profiles():
     # weren't those with the radiations. However, I have checked this and it is not an artefact.
     draw_individual_type_networks(type_profile_rel_abund_dict_holder_dict)
 
+    # here we want to draw the super network. This will be the network which is all of the types mixed together
+    # just for diagramatic sake
+    # we will make this network with a very high subsampling so that we can illustrate the loss of diversity
+    # when we then do a much lower sampling, i.e. 1000 bp.
+    # we will somehow need to keep track of the proportion that each type contributes to every given sequence
+    # this way we will be able to colour the super network so that we can see the mix in both the high
+    # and low subsample level
+    even_mix_type_dict = defaultdict(float)
+    # we will have a dict dict here that will keep track of how much each type contributed to each sequence
+    # key will be the sequence, and the value will be alist of tups which with each tup being
+    # a type id and the relative proportion that the sequence was found in the type
+    sequence_type_split_dict = defaultdict(list)
+    for type_id_key, type_id_dict in type_profile_rel_abund_dict_holder_dict.items():
+        for sequence_key, rel_abund_value in type_id_dict.keys():
+            # be sure to add the sequence and the contrubution of this type to the sequence_type_split_dict too
+            even_mix_type_dict[sequence_key] = rel_abund_value
+            sequence_type_split_dict[sequence_key].append((type_id_key, rel_abund_value))
+
+
+    # at this point we need to normalise the even mix dict
+    total = sum(even_mix_type_dict.values())
+    normalised_even_mix_type_dict = {k: v / total for k, v in even_mix_type_dict.items()}
+    sys.stout.write('\rnew dict sums to {}'.format(sum(normalised_even_mix_type_dict.values())))
+    # we should also normalise the sequence type split dict so that the proportions add up to one
+    normalised_sequence_type_split_dict = {}
+    for sequence_key, tup_list_value in sequence_type_split_dict.items():
+        new_tup_list = []
+        total = sum([tup[1] for tup in tup_list_value])
+        new_tup_list = [(tup[0], tup[1]/total) for tup in tup_list_value]
+        normalised_sequence_type_split_dict[sequence_key] = new_tup_list
+
+    # now we should in theory be able to generate a splits tree network file with this
+
+    splits_list_out_mix_1000 = generate_median_joining_network_from_dict_no_med(seq_abund_dict=normalised_even_mix_type_dict,
+                                                                           type_id='even_mix', subsample_level=1000)
+
+    splits_list_out_mix_100000 = generate_median_joining_network_from_dict_no_med(seq_abund_dict=normalised_even_mix_type_dict,
+                                                                           type_id='even_mix', subsample_level=100000)
+    # this will function slightly differently in that it will take into account that every node could have multiple
+    # colours. If we can't use network x to do this for us then we can always do it by hand with circles.
+    draw_network_split_colours()
+
     # here we have cleaned up type profiles
     # we have learnt that the high similarity between type profile are likely not due to random background zooxs
     # being carried through into type profiles as there is high similarity between similar types even from differnt studies
@@ -1920,12 +1962,17 @@ def draw_individual_type_networks(type_profile_rel_abund_dict_holder_dict):
         if (i * i) > num_types:
             sub_plot_square = i
             break
-    colour_palette_pas = ['#%02x%02x%02x' % rgb_tup for rgb_tup in
-                          create_colour_list(mix_col=(255, 255, 255), sq_dist_cutoff=1000,
-                                             num_cols=num_types,
-                                             time_out_iterations=10000)]
-    network_colour_dict = {type_id: colour for type_id, colour in
-                           zip(type_profile_rel_abund_dict_holder_dict.keys(), colour_palette_pas)}
+    if os.path.isfile('network_colour_dict.pickle'):
+        network_colour_dict = pickle.load(open('network_colour_dict.pickle', 'rb'))
+    else:
+        colour_palette_pas = ['#%02x%02x%02x' % rgb_tup for rgb_tup in
+                              create_colour_list(mix_col=(255, 255, 255), sq_dist_cutoff=1000,
+                                                 num_cols=num_types,
+                                                 time_out_iterations=10000)]
+        network_colour_dict = {type_id: colour for type_id, colour in
+                               zip(type_profile_rel_abund_dict_holder_dict.keys(), colour_palette_pas)}
+        pickle.dump(network_colour_dict, open('network_colour_dict.pickle', 'wb'))
+
     f, axarr = plt.subplots(sub_plot_square, sub_plot_square, figsize=(10, 10))
     ax_count = 0
     for type_id, type_dict  in type_profile_rel_abund_dict_holder_dict.items():
@@ -1936,11 +1983,11 @@ def draw_individual_type_networks(type_profile_rel_abund_dict_holder_dict):
 
         # This returns two tuples. Each tuple represents a splitstree out file and an abundance dict
         # the first tup is currently the no med, and the second the med
-        list_of_network_tups_to_draw = generate_median_joining_network_from_dict(type_dict, type_id)
+        list_of_network_tups_to_draw = generate_median_joining_network_from_dict(type_dict, type_id, subsample_level=100000)
         for to_draw_tup in list_of_network_tups_to_draw:
             ax = axarr[int(ax_count / sub_plot_square)][ax_count % sub_plot_square]
             colour_for_network = network_colour_dict[type_id]
-            draw_networkx_network = draw_network(splits_tree_out_file=to_draw_tup[0], count_id_to_abund_dict=to_draw_tup[1], ax=ax, colour_for_network=colour_for_network, type_id=type_id)
+            draw_network(splits_tree_out_file=to_draw_tup[0], count_id_to_abund_dict=to_draw_tup[1], ax=ax, colour_for_network=colour_for_network, type_id=type_id)
         ax_count += 1
         apples = 'asdf'
     # remove the axes from the remaining two axes
@@ -1948,8 +1995,8 @@ def draw_individual_type_networks(type_profile_rel_abund_dict_holder_dict):
         ax = axarr[int(ax_count / sub_plot_square)][ax_count % sub_plot_square]
         ax.set_axis_off()
         ax_count += 1
-    plt.savefig('individual_type_no_MED_networks_subsampled.svg')
-    plt.savefig('individual_type_no_MED_networks_subsampled.png')
+    plt.savefig('individual_type_no_MED_networks_subsampled_with_med_M4_100000.svg')
+    plt.savefig('individual_type_no_MED_networks_subsampled_with_med_M4_100000.png')
 
 
 def delete_wrong_clade_seqs(diff_clade, same_clade, type_profile_rel_abund_dict_holder_dict, type_to_clade_dict):
@@ -2064,8 +2111,8 @@ def generate_mix_type_even(type_profile_rel_abund_dict_holder_dict):
             for combo in itertools.combinations(type_profile_rel_abund_dict_holder_dict.keys(), i):
                 # create a counter that can hold the overall relative abundances for the combination of dictionaries
                 combo_dict = Counter(dict())
-                for single_dict in combo:
-                    combo_dict += Counter(type_profile_rel_abund_dict_holder_dict[single_dict])
+                for single_dict_key in combo:
+                    combo_dict += Counter(type_profile_rel_abund_dict_holder_dict[single_dict_key])
                 # we then need to normalist the dict
 
                 total = sum(combo_dict.values())
@@ -2965,7 +3012,9 @@ def calculate_shannons_equitability(list_of_items):
 
 
 def generate_median_joining_network_from_dict(seq_abund_dict, type_id, subsample_level=1000):
-    ''' I am going to modify this so that it also produces a MED version for plotting up.
+    '''
+
+    I am going to modify this so that it also produces a MED version for plotting up.
     The aim of this method will be to generate a network for a set of sequences. To start with this will be
     passed in as a dict with sequence as key and abundance as value. We will work with these abundances as relative
     so that the largest is 1 and the smallest will be scaled relative.
@@ -2984,12 +3033,14 @@ def generate_median_joining_network_from_dict(seq_abund_dict, type_id, subsample
     type_wkd = '{}/{}'.format(os.getcwd(), type_id)
     os.makedirs(type_wkd, exist_ok=True)
 
-    if os.path.isfile('{}/{}_splits_tree_out_file_subsampled.pickle'.format(type_wkd, type_id)) and os.path.isfile('{}/{}_splits_tree_out_file_subsampled_MED.pickle'.format(type_wkd, type_id)):
+    if os.path.isfile(
+            '{}/{}_splits_tree_out_file_subsampled_no_med_{}.pickle'.format(type_wkd, type_id, subsample_level)) and os.path.isfile(
+            '{}/{}_splits_tree_out_file_subsampled_med_{}.pickle'.format(type_wkd, type_id, subsample_level)):
 
-        splits_tree_out_file_no_med = pickle.load(open('{}/{}_splits_tree_out_file_subsampled_med.pickle'.format(type_wkd, type_id), 'rb'))
-        count_id_to_abund_dict = pickle.load(open('{}/{}_count_id_to_abund_dict_subsampled_no_med.pickle'.format(type_wkd, type_id), 'rb'))
-        splits_tree_out_file_med = pickle.load(open('{}/{}_splits_tree_out_file_subsampled_med.pickle'.format(type_wkd,type_id), 'rb'))
-        med_abundance_dict = pickle.load(open('{}/{}_count_id_to_abund_dict_subsampled_med.pickle'.format(type_wkd,type_id), 'rb'))
+        splits_tree_out_file_no_med = pickle.load(open('{}/{}_splits_tree_out_file_subsampled_no_med_{}.pickle'.format(type_wkd, type_id, subsample_level), 'rb'))
+        count_id_to_abund_dict = pickle.load(open('{}/{}_count_id_to_abund_dict_subsampled_no_med_{}.pickle'.format(type_wkd, type_id, subsample_level), 'rb'))
+        splits_tree_out_file_med = pickle.load(open('{}/{}_splits_tree_out_file_subsampled_med_{}.pickle'.format(type_wkd,type_id, subsample_level), 'rb'))
+        med_abundance_dict = pickle.load(open('{}/{}_count_id_to_abund_dict_subsampled_med_{}.pickle'.format(type_wkd,type_id, subsample_level), 'rb'))
 
     else:
 
@@ -2998,7 +3049,7 @@ def generate_median_joining_network_from_dict(seq_abund_dict, type_id, subsample
         for sequence, abundance in seq_abund_dict.items():
             # here check to see that the sequence will be found still when subsampling to 1000
             if int(abundance*subsample_level) > 0:
-                fasta_to_blast.extend(['>seq_{}'.format(count), '{}'.format(sequence)])
+                fasta_to_blast.extend(['>seq{}'.format(count), '{}'.format(sequence)])
             count += 1
 
         # create a dictionary of name to seq
@@ -3056,7 +3107,7 @@ def generate_median_joining_network_from_dict(seq_abund_dict, type_id, subsample
         count = 0
         for sequence, abundance in seq_abund_dict.items():
             if int(abundance * subsample_level) > 0:
-                fasta_to_align.extend(['>seq_{}'.format(count), '{}'.format(sequence)])
+                fasta_to_align.extend(['>seq{}'.format(count), '{}'.format(sequence)])
                 count += 1
 
 
@@ -3096,7 +3147,7 @@ def generate_median_joining_network_from_dict(seq_abund_dict, type_id, subsample
         # it would be good to have a method that took in the aligned_fasta, the dict and then returned a new fasta
         # and dict
         med_aligned_fasta, med_abundance_dict = perform_MED_on_fasta(aligned_fasta_cropped=aligned_fasta_cropped,
-                                                                     count_id_to_abund=count_id_to_seq_dict,
+                                                                     count_id_to_abund=count_id_to_abund_dict,
                                                                      subsample=subsample_level, type_id=type_id)
 
         # we have to make the new nexus format by hand as the biopython version was putting out old versions.
@@ -3108,8 +3159,8 @@ def generate_median_joining_network_from_dict(seq_abund_dict, type_id, subsample
         network_wkd = '{}/{}/{}_networks'.format(os.getcwd(), type_id, type_id)
         os.makedirs(network_wkd, exist_ok=True)
 
-        splits_nexus_path = '{}/{}_splitstree_in_no_med.nex'.format(network_wkd, type_id)
-        with open(splits_nexus_path, 'w') as f:
+        splits_nexus_path_no_med = '{}/{}_splitstree_in_no_med.nex'.format(network_wkd, type_id)
+        with open(splits_nexus_path_no_med, 'w') as f:
             for line in new_nexus_no_med:
                 f.write('{}\n'.format(line))
 
@@ -3124,7 +3175,7 @@ def generate_median_joining_network_from_dict(seq_abund_dict, type_id, subsample
         ctrl_out_path_no_med = '{}/{}_splitstree_ctrl_no_med'.format(network_wkd, type_id)
         # this creates a control file that can be fed to splits tree on the command line and write it out
         # it then tuns splitstrees with the cntrl file before returning the output file
-        splits_tree_out_file_no_med = run_splits_trees(ctrl_out_path=ctrl_out_path_no_med, splits_nexus_path=splits_nexus_path, splits_out_path=splits_out_path_no_med)
+        splits_tree_out_file_no_med = run_splits_trees(ctrl_out_path=ctrl_out_path_no_med, splits_nexus_path=splits_nexus_path_no_med, splits_out_path=splits_out_path_no_med)
 
         # now create the control file that we can use for execution for the no med
         splits_out_path_med = '{}/{}_splitstree_out_med.nex'.format(network_wkd, type_id)
@@ -3137,14 +3188,179 @@ def generate_median_joining_network_from_dict(seq_abund_dict, type_id, subsample
 
         #TODO perhaps we can just pass out the count_id_to abundance dict rather than both
         # this should save us a step later on. Do the same for the MED version of this.
-        pickle.dump(splits_tree_out_file_no_med, open('{}/{}_splits_tree_out_file_subsampled_med.pickle'.format(type_wkd, type_id), 'wb'))
-        pickle.dump(count_id_to_abund_dict, open('{}/{}_count_id_to_abund_dict_subsampled_no_med.pickle'.format(type_wkd, type_id), 'wb'))
-        pickle.dump(splits_tree_out_file_med, open('{}/{}_splits_tree_out_file_subsampled_med.pickle'.format(type_wkd, type_id), 'wb'))
-        pickle.dump(med_abundance_dict, open('{}/{}_count_id_to_abund_dict_subsampled_med.pickle'.format(type_wkd, type_id), 'wb'))
+        pickle.dump(splits_tree_out_file_no_med, open(
+            '{}/{}_splits_tree_out_file_subsampled_no_med_{}.pickle'.format(type_wkd, type_id, subsample_level), 'wb'))
+        pickle.dump(count_id_to_abund_dict, open(
+            '{}/{}_count_id_to_abund_dict_subsampled_no_med_{}.pickle'.format(type_wkd, type_id, subsample_level),
+            'wb'))
+        pickle.dump(splits_tree_out_file_med, open(
+            '{}/{}_splits_tree_out_file_subsampled_med_{}.pickle'.format(type_wkd, type_id, subsample_level), 'wb'))
+        pickle.dump(med_abundance_dict, open(
+            '{}/{}_count_id_to_abund_dict_subsampled_med_{}.pickle'.format(type_wkd, type_id, subsample_level), 'wb'))
 
 
 
     return [(splits_tree_out_file_no_med, count_id_to_abund_dict), (splits_tree_out_file_med, med_abundance_dict)]
+
+def generate_median_joining_network_from_dict_no_med(seq_abund_dict, type_id, subsample_level=1000):
+    '''
+
+    I am going to modify this so that it also produces a MED version for plotting up.
+    The aim of this method will be to generate a network for a set of sequences. To start with this will be
+    passed in as a dict with sequence as key and abundance as value. We will work with these abundances as relative
+    so that the largest is 1 and the smallest will be scaled relative.
+    1 - Blast the sequences against a clade db to get clade. Infer the major clade of the type profile
+    then dicard sequeneces that are not from the same clade.
+    2 - produce an alignment of the sequences
+    3 - put this alignment into splits trees somehow
+    4 - transfer this into network x and make a network from it'''
+
+    # it may be best if we pass in a redundant fasta to splits tree as then the actual sizes will be correct
+    # then perhaps we can even draw this ourselves using circles and lines and get the sizes directly from the
+    # splitstree output file
+
+    # create a fasta file from the dictionary
+    # we will work with a set size of 100000 sequences
+    type_wkd = '{}/{}'.format(os.getcwd(), type_id)
+    os.makedirs(type_wkd, exist_ok=True)
+
+    if os.path.isfile(
+            '{}/{}_splits_tree_out_file_subsampled_no_med_{}.pickle'.format(type_wkd, type_id, subsample_level)):
+
+        splits_tree_out_file_no_med = pickle.load(open('{}/{}_splits_tree_out_file_subsampled_no_med_{}.pickle'.format(type_wkd, type_id, subsample_level), 'rb'))
+        count_id_to_abund_dict = pickle.load(open('{}/{}_count_id_to_abund_dict_subsampled_no_med_{}.pickle'.format(type_wkd, type_id, subsample_level), 'rb'))
+
+    else:
+        fasta_to_blast = []
+        count = 0
+        for sequence, abundance in seq_abund_dict.items():
+            # here check to see that the sequence will be found still when subsampling to 1000
+            if int(abundance*subsample_level) > 0:
+                fasta_to_blast.extend(['>seq{}'.format(count), '{}'.format(sequence)])
+            count += 1
+
+        # create a dictionary of name to seq
+        count_id_to_seq_dict = {fasta_to_blast[i][1:] : fasta_to_blast[i+1] for i in range(0, len(fasta_to_blast), 2)}
+
+        writeListToDestination('{}/seqs_to_write.fasta'.format(os.getcwd()), fasta_to_blast)
+
+        # now perform the blast and get a sequence to clade dictionary as a result
+        # now do a blast on these seqs
+        ncbircFile = []
+        if os.path.isdir('/Users/humebc/Documents/SymPortal_testing_repo/SymPortal_framework/symbiodiniumDB'):
+            db_path = '/Users/humebc/Documents/SymPortal_testing_repo/SymPortal_framework/symbiodiniumDB'
+        else:
+            # if we are on the remote server
+            db_path = '/home/humebc/phylogeneticSoftware/SymPortal_framework/symbiodiniumDB'
+        ncbircFile.extend(["[BLAST]", "BLASTDB={}".format(db_path)])
+        # write the .ncbirc file that gives the location of the db
+        writeListToDestination('{}/.ncbirc'.format(os.getcwd()), ncbircFile)
+        blastOutputPath = '{}/blast.out'.format(os.getcwd())
+        outputFmt = "6 qseqid sseqid staxids evalue"
+        inputPath = '{}/seqs_to_write.fasta'.format(os.getcwd())
+
+        # Run local blast
+        # completedProcess = subprocess.run([blastnPath, '-out', blastOutputPath, '-outfmt', outputFmt, '-query', inputPath, '-db', 'symbiodinium.fa', '-max_target_seqs', '1', '-num_threads', '1'])
+        completedProcess = subprocess.run(
+            ['blastn', '-out', blastOutputPath, '-outfmt', outputFmt, '-query', inputPath, '-db',
+             'symClade.fa', '-max_target_seqs', '1', '-num_threads', '7'])
+
+        # Read in blast output
+        blast_output_file = readDefinedFileToList(blastOutputPath)
+
+        seq_clade_dict = {}
+        for result_line in blast_output_file:
+            seq_clade_dict[result_line.split('\t')[0]] = result_line.split('\t')[1][-1]
+
+        # get the most common clade
+        clade_counter = defaultdict(int)
+        for value in seq_clade_dict.values():
+            clade_counter[value] += 1
+
+        maj_clade = sorted(clade_counter.items(), key=lambda x: x[1], reverse=True)[0][0]
+
+        # now discard sequences from the dictionary that do not match the maj_clade
+        non_clade_seq_counter = 0
+        for seq, clade in seq_clade_dict.items():
+            if clade != maj_clade:
+                seq_to_del = count_id_to_seq_dict[seq]
+                del seq_abund_dict[seq_to_del]
+                non_clade_seq_counter +=1
+        print('{} sequences deleted'.format(non_clade_seq_counter))
+
+        # now recreate the fasta from the dict with only single clade seqs
+        # create a fasta file from the dictionary
+        fasta_to_align = []
+        count = 0
+        for sequence, abundance in seq_abund_dict.items():
+            if int(abundance * subsample_level) > 0:
+                fasta_to_align.extend(['>seq{}'.format(count), '{}'.format(sequence)])
+                count += 1
+
+
+        # we need to have a count_id_to_abundance_dict for drawing the networks
+        count_id_to_abund_dict = {fasta_to_align[i][1:]: seq_abund_dict[fasta_to_align[i + 1]] for i in range(0, len(fasta_to_align), 2)}
+
+        # here we have a cleaned dict that only contains sequences from one clade
+        # now align using mafft
+        # Write out the new fasta
+        infile_path = '{}/temp_type_fasta_for_net_blast.fasta'.format(os.getcwd())
+        writeListToDestination(infile_path, fasta_to_align)
+        # now perform the alignment with MAFFT
+        mafft = local["mafft-linsi"]
+
+        out_file = infile_path.replace('.fasta', '_aligned.fasta')
+
+        # now run mafft including the redirect
+        (mafft[ '--thread', -1, infile_path] > out_file)()
+
+        aligned_fasta_interleaved = readDefinedFileToList(out_file)
+        aligned_fasta = convert_interleaved_to_sequencial_fasta_two(aligned_fasta_interleaved)
+        aligned_fasta_cropped = crop_fasta(aligned_fasta)
+
+
+
+
+        # here we now have the fasta cropped and a new copped_seq_abundance_dict
+        # we also have a dictionary that links the count_id to the abundance which is what we can use
+        # when creating the network
+
+        # we have to make the new nexus format by hand as the biopython version was putting out old versions.
+        new_nexus_no_med = splits_tree_nexus_from_fasta(aligned_fasta_cropped)
+
+        # now the nexus is complete and ready for writing out.
+        # I think we whould start working in directories here
+        network_wkd = '{}/{}/{}_networks'.format(os.getcwd(), type_id, type_id)
+        os.makedirs(network_wkd, exist_ok=True)
+
+        splits_nexus_path_no_med = '{}/{}_splitstree_in_no_med.nex'.format(network_wkd, type_id)
+        with open(splits_nexus_path_no_med, 'w') as f:
+            for line in new_nexus_no_med:
+                f.write('{}\n'.format(line))
+
+
+
+
+        # now create the control file that we can use for execution for the no med
+        splits_out_path_no_med = '{}/{}_splitstree_out_no_med.nex'.format(network_wkd, type_id)
+        ctrl_out_path_no_med = '{}/{}_splitstree_ctrl_no_med'.format(network_wkd, type_id)
+        # this creates a control file that can be fed to splits tree on the command line and write it out
+        # it then tuns splitstrees with the cntrl file before returning the output file
+        splits_tree_out_file_no_med = run_splits_trees(ctrl_out_path=ctrl_out_path_no_med, splits_nexus_path=splits_nexus_path_no_med, splits_out_path=splits_out_path_no_med)
+
+
+
+        #TODO perhaps we can just pass out the count_id_to abundance dict rather than both
+        # this should save us a step later on. Do the same for the MED version of this.
+        pickle.dump(splits_tree_out_file_no_med, open(
+            '{}/{}_splits_tree_out_file_subsampled_no_med_{}.pickle'.format(type_wkd, type_id, subsample_level), 'wb'))
+        pickle.dump(count_id_to_abund_dict, open(
+            '{}/{}_count_id_to_abund_dict_subsampled_no_med_{}.pickle'.format(type_wkd, type_id, subsample_level),
+            'wb'))
+
+
+
+    return splits_tree_out_file_no_med, count_id_to_abund_dict
 
 
 def run_splits_trees(ctrl_out_path, splits_nexus_path, splits_out_path):
@@ -3262,8 +3478,12 @@ def perform_MED_on_fasta(aligned_fasta_cropped, count_id_to_abund, subsample, ty
 
 
     sys.stdout.write('{}: running MED\n'.format(type_id))
+
+    #Here we need to make sure that the M value is set dynamically. We want to maintain the 1000 to 4 ratio
+    # i.e. we want it set to 4 when we are subsampling to 1000. So, we need to set it to 0.04% or 0.004
+    M_value = M_value = max(4, int(0.004 * subsample))
     completedProcess = subprocess.run(
-        [r'decompose', '-M', '1', '--skip-gexf-files', '--skip-gen-figures', '--skip-gen-html', '--skip-check-input', '-o',
+        [r'decompose', '-M', str(M_value), '--skip-gexf-files', '--skip-gen-figures', '--skip-gen-html', '--skip-check-input', '-o',
          MEDOutDir, path_to_cropped_padded_redundant_fasta])
 
     # we can work with the NODE-REPRESENTATIVES.fasta file to read in the representative sequence. This
@@ -3272,16 +3492,20 @@ def perform_MED_on_fasta(aligned_fasta_cropped, count_id_to_abund, subsample, ty
     # being we will continue to work with -M 1 but we should certainly take a look at how the deafault -M 4 performs
     # one thing I would like to check is to see that the umber of samples in the NODE-REp file actually
     # add up to what we are expecting.
-    with open('{}/NODE-REPRESENTATIVES.fasta', 'r') as f:
+    with open('{}/NODE-REPRESENTATIVES.fasta'.format(MEDOutDir), 'r') as f:
         node_rep_file = [line.rstrip() for line in f]
 
     med_fasta_unaligned = []
     count = 0
+
+    # we want to return the relative abundance rather than the med absolute abundances
+    # so divide the MED absolute abundances for each node by the total
     med_count_id_to_abundance = {}
+    total_med_node_abundance = sum([int(node_rep_file[i].split(':')[-1]) for i in range(0, len(node_rep_file), 2)])
     for i in range(0, len(node_rep_file), 2):
-        med_fasta_unaligned.append('seq{}'.format(count))
+        med_fasta_unaligned.append('>seq{}'.format(count))
         med_fasta_unaligned.append(node_rep_file[i+1].replace('-', ''))
-        med_count_id_to_abundance['seq{}'.format(count)] = int(node_rep_file[i].split(':')[-1])
+        med_count_id_to_abundance['seq{}'.format(count)] = float(int(node_rep_file[i].split(':')[-1]) / total_med_node_abundance)
         count += 1
 
     # write out the unaligned med fasta
@@ -3461,7 +3685,119 @@ def draw_network(splits_tree_out_file, count_id_to_abund_dict, ax, colour_for_ne
     ax.set_xlim(min_ax_val - 0.2, max_ax_val + 0.2)
     # to set the edge colour of the nodes we need to draw them seperately
     # nx.draw_networkx_nodes(g, pos=spring_pos, node_size=vertices_sizes, with_labels=False, alpha=0.5, edgecolors='black')
-    drawn = nx.draw_networkx(g, pos=spring_pos, arrows=False, ax=ax, node_color=colour_for_network, alpha=1.0, node_size=vertices_sizes, with_labels=False )
+    nx.draw_networkx(g, pos=spring_pos, arrows=False, ax=ax, node_color=colour_for_network, alpha=1.0, node_size=vertices_sizes, with_labels=False )
+
+    # https://stackoverflow.com/questions/22716161/how-can-one-modify-the-outline-color-of-a-node-in-networkx
+    #https://matplotlib.org/api/collections_api.html
+    ax.collections[0].set_edgecolor('grey')
+    ax.collections[0].set_linewidth(0.5)
+    ax.collections[1].set_linewidth(0.5)
+    ax.set_axis_off()
+    ax.set_title(type_id)
+    apples = 'asdf'
+
+def draw_network_split_colours(splits_tree_out_file, count_id_to_abund_dict, ax, colour_for_network, type_id):
+    # networkx graph object
+    g = nx.Graph()
+
+
+
+    # we can work with a minimised version of the splits out file that is only the network block
+    for i in range(len(splits_tree_out_file)):
+        if splits_tree_out_file[i] == 'BEGIN Network;':
+            network_block = splits_tree_out_file[i:]
+            break
+
+    # here we can now work with the network_block rather than the larger splits_tree_out_file
+    # get a list of the nodes
+    # these can be got from the splits_tree_outfile
+    # we should use the numbered system that the splits tree is using. We can get a list of the different sequences
+    # that each of the taxa represent form the translate part of the network block.
+    # This way we can use this to run the sequences against SP to get the names of the sequencs
+    # we can also make the 'translation dictionary' at the same time
+    vertice_id_to_seq_id_dict = defaultdict(list)
+    for i in range(len(network_block)):
+        if network_block[i] == 'TRANSLATE':
+            # for each line in the translate section
+            for j in range(i + 1, len(network_block)):
+                if network_block[j] == ';':
+                    # then we have reached the end of the translation section
+                    break
+                items = network_block[j].replace('\'', '').replace(',', '').split(' ')
+                vertice_id_to_seq_id_dict[items[0]].extend(items[1:])
+
+    vertices = list(vertice_id_to_seq_id_dict.keys())
+
+    # here we will use the dictionary that was created in the previous method (passed into this one)
+    # to link the count id to the actual sequence, which can then be used to look up the abundance
+    # This way we can have a vertice_id_to_rel_abund dict that we can use to put a size to the nodes
+
+    vertice_id_to_rel_abund_dict = {}
+    for vert_id in vertices:
+        count_id_list = vertice_id_to_seq_id_dict[vert_id]
+        if len(count_id_list) == 1:
+            rel_abund = count_id_to_abund_dict[count_id_list[0]]
+            vertice_id_to_rel_abund_dict[vert_id] = rel_abund
+        elif len(count_id_list) > 1:
+            # then we need sum the abundances for each of them
+            tot = 0
+            for count_id in count_id_list:
+                rel_abund = count_id_to_abund_dict[count_id]
+                tot += rel_abund
+            vertice_id_to_rel_abund_dict[vert_id] = tot
+
+
+    # the sizes are a little tricky to work out becauase I'm not acutally sure what the units are, possibly pixels
+    # lets work where if there was only 1 sequence it would be a size of 1000
+    # therefore each vertice will be a node size that is the re_abund * 1000
+    # NB the size does appear to be something similar to pixels
+    vertices_sizes = [int(vertice_id_to_rel_abund_dict[vert] * 1000) for vert in vertices]
+
+    # the edge list should be a list of tuples
+    # currently we are not taking into account the length of the vertices
+    edges_list = []
+    for i in range(len(network_block)):
+        if network_block[i] == 'EDGES':
+            # for each line in the translate section
+            for j in range(i + 1, len(network_block)):
+                if network_block[j] == ';':
+                    # then we have reached the end of the translation section
+                    break
+                items = network_block[j].replace(',', '').split(' ')[1:]
+                edges_list.append((items[0], items[1]))
+
+    # THis is useful, scroll down to where the 'def draw_networkx(......' is
+    # https://networkx.github.io/documentation/networkx-1.9/_modules/networkx/drawing/nx_pylab.html#draw_networkx
+
+    # so some of the vertice size are coming back as 0 because they were found in such low abundances.
+    # because we are working with a subsampling of 1000 we should probably get rid of any of the vertices that
+    # have size 0. However, we can't do that at this point because then we will be breaking the network
+    # as such we are going to have to do this before we calculate the networks. This could actually work in our favour
+    # as it could make the network less computationally expensive.
+
+    g.add_nodes_from(vertices)
+    g.add_edges_from(edges_list)
+    # we should be able to
+    # f, ax = plt.subplots(1, 1)
+    # we will need to set the limits dynamically as we don't know what the positions are going to be.
+    # I think we will want to have the x and y limits the same so that we end up with a square
+    # we will therefore just look for the bigest and smallest values, add a buffer and then set the
+    # axes limits to thsee
+    spring_pos = nx.spring_layout(g)
+    max_ax_val = 0
+    min_ax_val = 9999
+    for vert_pos_array in spring_pos.values():
+        for ind in vert_pos_array:
+            if ind > max_ax_val:
+                max_ax_val = ind
+            if ind < min_ax_val:
+                min_ax_val = ind
+
+    ax.set_ylim(min_ax_val - 0.2, max_ax_val + 0.2)
+    ax.set_xlim(min_ax_val - 0.2, max_ax_val + 0.2)
+    # to set the edge colour of the nodes we need to draw them seperately
+    # nx.draw_networkx_nodes(g, pos=spring_pos, node_size=vertices_sizes, with_labels=False, alpha=0.5, edgecolors='black')
+    nx.draw_networkx(g, pos=spring_pos, arrows=False, ax=ax, node_color=colour_for_network, alpha=1.0, node_size=vertices_sizes, with_labels=False )
 
     # https://stackoverflow.com/questions/22716161/how-can-one-modify-the-outline-color-of-a-node-in-networkx
     #https://matplotlib.org/api/collections_api.html
