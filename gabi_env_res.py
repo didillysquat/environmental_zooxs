@@ -500,14 +500,10 @@ def create_quan_diversity_figs_no_MED_seqs():
     QC_info_df.drop('P7_G07', axis='index', inplace=True)
     info_df.drop('P7_G07', axis='index', inplace=True)
 
-    # lets make 5 subplot
+    # lets make 3 subplot
     # according to the above categories
 
     f, axarr = plt.subplots(3, 1, figsize=(6,4))
-
-    # # make the y axes logarithmic
-    # for ax in axarr:
-    #     ax.set_yscale('log')
 
 
     # counter to reference which set of axes we are plotting on
@@ -1809,13 +1805,13 @@ def model_its_type_profiles():
     # here we want to draw the super network. This will be the network which is all of the types mixed together
     # just for diagramatic sake
     # we will make this network with a very high subsampling so that we can illustrate the loss of diversity
-    # when we then do a much lower sampling, i.e. 1000 bp.
+    # when we then do a much lower sampling, i.e. 1000.
     # we will somehow need to keep track of the proportion that each type contributes to every given sequence
     # this way we will be able to colour the super network so that we can see the mix in both the high
     # and low subsample level
     even_mix_type_dict = defaultdict(float)
     # we will have a dict dict here that will keep track of how much each type contributed to each sequence
-    # key will be the sequence, and the value will be alist of tups which with each tup being
+    # key will be the sequence, and the value will be a list of tups which with each tup being
     # a type id and the relative proportion that the sequence was found in the type
     sequence_type_split_dict = defaultdict(list)
     for type_id_key, type_id_dict in type_profile_rel_abund_dict_holder_dict.items():
@@ -1988,7 +1984,7 @@ def draw_individual_type_networks(type_profile_rel_abund_dict_holder_dict):
             ax = axarr[int(ax_count / sub_plot_square)][ax_count % sub_plot_square]
             colour_for_network = network_colour_dict[type_id]
             draw_network(splits_tree_out_file=to_draw_tup[0], count_id_to_abund_dict=to_draw_tup[1], ax=ax, colour_for_network=colour_for_network, type_id=type_id)
-        ax_count += 1
+            ax_count += 1
         apples = 'asdf'
     # remove the axes from the remaining two axes
     for i in range(2):
@@ -2712,6 +2708,7 @@ def plot_rarefaction_indi_gen_two(type_profile_rel_abund_dict_holder_dict):
             p.join()
 
         pickle.dump(dict(output_dict_shared), open('type_profile_rarefaction_dict.pickle', 'wb'))
+
     # PLOT RAREFACTION
 
     fig = plt.figure(figsize=(14, 6))
@@ -3034,13 +3031,13 @@ def generate_median_joining_network_from_dict(seq_abund_dict, type_id, subsample
     os.makedirs(type_wkd, exist_ok=True)
 
     if os.path.isfile(
-            '{}/{}_splits_tree_out_file_subsampled_no_med_{}.pickle'.format(type_wkd, type_id, subsample_level)) and os.path.isfile(
-            '{}/{}_splits_tree_out_file_subsampled_med_{}.pickle'.format(type_wkd, type_id, subsample_level)):
+            '{}/{}_splits_tree_out_file_subsampled_no_med_{}_dynamicM.pickle'.format(type_wkd, type_id, subsample_level)) and os.path.isfile(
+            '{}/{}_splits_tree_out_file_subsampled_med_{}_dynamicM.pickle'.format(type_wkd, type_id, subsample_level)):
 
-        splits_tree_out_file_no_med = pickle.load(open('{}/{}_splits_tree_out_file_subsampled_no_med_{}.pickle'.format(type_wkd, type_id, subsample_level), 'rb'))
-        count_id_to_abund_dict = pickle.load(open('{}/{}_count_id_to_abund_dict_subsampled_no_med_{}.pickle'.format(type_wkd, type_id, subsample_level), 'rb'))
-        splits_tree_out_file_med = pickle.load(open('{}/{}_splits_tree_out_file_subsampled_med_{}.pickle'.format(type_wkd,type_id, subsample_level), 'rb'))
-        med_abundance_dict = pickle.load(open('{}/{}_count_id_to_abund_dict_subsampled_med_{}.pickle'.format(type_wkd,type_id, subsample_level), 'rb'))
+        splits_tree_out_file_no_med = pickle.load(open('{}/{}_splits_tree_out_file_subsampled_no_med_{}_dynamicM.pickle'.format(type_wkd, type_id, subsample_level), 'rb'))
+        count_id_to_abund_dict = pickle.load(open('{}/{}_count_id_to_abund_dict_subsampled_no_med_{}_dynamicM.pickle'.format(type_wkd, type_id, subsample_level), 'rb'))
+        splits_tree_out_file_med = pickle.load(open('{}/{}_splits_tree_out_file_subsampled_med_{}_dynamicM.pickle'.format(type_wkd,type_id, subsample_level), 'rb'))
+        med_abundance_dict = pickle.load(open('{}/{}_count_id_to_abund_dict_subsampled_med_{}_dynamicM.pickle'.format(type_wkd,type_id, subsample_level), 'rb'))
 
     else:
 
@@ -3189,14 +3186,14 @@ def generate_median_joining_network_from_dict(seq_abund_dict, type_id, subsample
         #TODO perhaps we can just pass out the count_id_to abundance dict rather than both
         # this should save us a step later on. Do the same for the MED version of this.
         pickle.dump(splits_tree_out_file_no_med, open(
-            '{}/{}_splits_tree_out_file_subsampled_no_med_{}.pickle'.format(type_wkd, type_id, subsample_level), 'wb'))
+            '{}/{}_splits_tree_out_file_subsampled_no_med_{}_dynamicM.pickle'.format(type_wkd, type_id, subsample_level), 'wb'))
         pickle.dump(count_id_to_abund_dict, open(
-            '{}/{}_count_id_to_abund_dict_subsampled_no_med_{}.pickle'.format(type_wkd, type_id, subsample_level),
+            '{}/{}_count_id_to_abund_dict_subsampled_no_med_{}_dynamicM.pickle'.format(type_wkd, type_id, subsample_level),
             'wb'))
         pickle.dump(splits_tree_out_file_med, open(
-            '{}/{}_splits_tree_out_file_subsampled_med_{}.pickle'.format(type_wkd, type_id, subsample_level), 'wb'))
+            '{}/{}_splits_tree_out_file_subsampled_med_{}_dynamicM.pickle'.format(type_wkd, type_id, subsample_level), 'wb'))
         pickle.dump(med_abundance_dict, open(
-            '{}/{}_count_id_to_abund_dict_subsampled_med_{}.pickle'.format(type_wkd, type_id, subsample_level), 'wb'))
+            '{}/{}_count_id_to_abund_dict_subsampled_med_{}_dynamicM.pickle'.format(type_wkd, type_id, subsample_level), 'wb'))
 
 
 
@@ -3697,6 +3694,8 @@ def draw_network(splits_tree_out_file, count_id_to_abund_dict, ax, colour_for_ne
     apples = 'asdf'
 
 def draw_network_split_colours(splits_tree_out_file, count_id_to_abund_dict, ax, colour_for_network, type_id):
+    network_colour_dict = pickle.load(open('network_colour_dict.pickle', 'rb'))
+
     # networkx graph object
     g = nx.Graph()
 
@@ -3777,8 +3776,8 @@ def draw_network_split_colours(splits_tree_out_file, count_id_to_abund_dict, ax,
 
     g.add_nodes_from(vertices)
     g.add_edges_from(edges_list)
-    # we should be able to
-    # f, ax = plt.subplots(1, 1)
+
+
     # we will need to set the limits dynamically as we don't know what the positions are going to be.
     # I think we will want to have the x and y limits the same so that we end up with a square
     # we will therefore just look for the bigest and smallest values, add a buffer and then set the
